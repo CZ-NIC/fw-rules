@@ -1,0 +1,2 @@
+-A "$CHAIN" -i "$WAN" -s 173.242.112.135 -m limit --limit 1/min -j LOG --log-prefix "turris-7E0510: " --log-level 7
+-A "$CHAIN" -i "$WAN" -d 173.242.112.135 -m limit --limit 1/min -j LOG --log-prefix "turris-7E0500: " --log-level 7
