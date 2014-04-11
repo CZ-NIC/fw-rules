@@ -10,6 +10,7 @@
 
 RULES_URL="https://api.turris.cz/firewall-test/rules"
 TMP_FILE="/tmp/iptables.rules"
+TMP_DOWNLOAD="/tmp/iptables.dowload"
 WAN=""
 while [ -z "$WAN" ]; do
     . $IPKG_INSTROOT/lib/functions.sh
@@ -36,12 +37,8 @@ while [ -z "$WAN" ]; do
     break
 done
 
-set -e
-
 if [ -n "$WAN" ]; then
     CHAIN="turris"
-    #rules="$(wget -qO - https://api.turris.cz/firewall.rules)"
-    #eval "$(rules)"
 
     # Don't store the the rules in turris chain and COMMIT
     iptables-save -t filter | grep -v '^-. turris' | grep -v COMMIT > "$TMP_FILE"
@@ -49,13 +46,17 @@ if [ -n "$WAN" ]; then
     # Add the new rules
     echo -A "$CHAIN" -i "$WAN" -p tcp -m tcp --dport 22 -m state --state NEW -m limit --limit 5/min -j LOG --log-prefix "\"turris-AABBCC: \"" --log-level 7 >> "$TMP_FILE"
 
-    curl -s --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "$RULES_URL" | while read line
+    curl -s --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "$RULES_URL" > "$TMP_DOWNLOAD" || (logger -t turris-firewall-rules "Failed to download $RULES_URL" && exit 1)
+
+    while read line
     do
         eval echo "$line" >> "$TMP_FILE"
-    done
+    done < "$TMP_DOWNLOAD"
 
     # Add the commit
     echo COMMIT >> "$TMP_FILE"
 
-    iptables-restore -T filter < "$TMP_FILE"
+    iptables-restore -T filter < "$TMP_FILE" || (logger -t turris-firewall-rules "Failed to load downloaded rules" && exit 1)
+
+    rm "$TMP_FILE" "$TMP_DOWNLOAD"
 fi
