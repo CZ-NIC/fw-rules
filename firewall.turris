@@ -43,9 +43,7 @@ if [ -n "$WAN" ]; then
     # Don't store the the rules in turris chain and COMMIT
     iptables-save -t filter | grep -v '^-. turris' | grep -v COMMIT > "$TMP_FILE"
 
-    # Add the new rules
-    echo -A "$CHAIN" -i "$WAN" -p tcp -m tcp --dport 22 -m state --state NEW -m limit --limit 5/min -j LOG --log-prefix "\"turris-AABBCC: \"" --log-level 7 >> "$TMP_FILE"
-
+    # Download FW rules from the server
     curl -s --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "$RULES_URL" > "$TMP_DOWNLOAD" || (logger -t turris-firewall-rules "Failed to download $RULES_URL" && exit 1)
 
     while read line
