@@ -1,0 +1,2 @@
+MAILTO=""
+0 * * * * root /usr/share/firewall/turris
