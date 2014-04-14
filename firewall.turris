@@ -8,53 +8,83 @@
 #   option path /usr/share/firewall/turris
 #
 
+DOWNLOAD_DIR="/tmp/fw-rules"
 RULES_URL="https://api.turris.cz/firewall-test/rules"
+MD5_URL="https://api.turris.cz/firewall-test/rules.md5"
 TMP_FILE="/tmp/iptables.rules"
-TMP_DOWNLOAD="/tmp/iptables.dowload"
+DOWNLOAD_RULES="${DOWNLOAD_DIR}/rules"
+DOWNLOAD_MD5="${DOWNLOAD_RULES}.md5"
 WAN=""
-while [ -z "$WAN" ]; do
+while [ -z "${WAN}" ]; do
     . $IPKG_INSTROOT/lib/functions.sh
 
     # read wan from nikola
     config_load nikola
     config_get WAN main wan_ifname
-    [ -n "$WAN" ] && break
+    [ -n "${WAN}" ] && break
 
     # read wan from network
     config_load network
     config_get WAN wan ifname
-    [ -n "$WAN" ] && break
+    [ -n "${WAN}" ] && break
 
     # read wan from ucollect
     set_WAN() {
         local cfg="$1"
-        config_get WAN "$cfg" ifname
+        config_get WAN "${cfg}" ifname
     }
     config_load ucollect
     config_foreach set_WAN interface
-    [ -n "$WAN" ] && break
+    [ -n "${WAN}" ] && break
 
     break
 done
 
-if [ -n "$WAN" ]; then
+# Download FW rules from the server
+download_rules() {
+    curl -s --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${RULES_URL}" > "${DOWNLOAD_RULES}" || (logger -t turris-firewall-rules "Failed to download ${RULES_URL}" && exit 1)
+}
+
+# Download md5 of the rules
+download_md5() {
+    curl -s --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${MD5_URL}" > "${DOWNLOAD_MD5}" || (logger -t turris-firewall-rules "Failed to download ${MD5_URL}" && exit 1)
+}
+
+if [ -n "${WAN}" ]; then
     CHAIN="turris"
 
     # Don't store the the rules in turris chain and COMMIT
-    iptables-save -t filter | grep -v '^-. turris' | grep -v COMMIT > "$TMP_FILE"
+    iptables-save -t filter | grep -v '^-. turris' | grep -v COMMIT > "${TMP_FILE}"
 
-    # Download FW rules from the server
-    curl -s --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "$RULES_URL" > "$TMP_DOWNLOAD" || (logger -t turris-firewall-rules "Failed to download $RULES_URL" && exit 1)
+    # Create directory for the rules
+    mkdir -p "${DOWNLOAD_DIR}"
+
+    # Enter the directory
+    cd "${DOWNLOAD_DIR}"
+
+    # Get md5sum instead of downloading the whole file
+    if [ -e "${DOWNLOAD_RULES}" ]; then
+        download_md5
+        if md5sum -s -c "${DOWNLOAD_MD5}"; then
+            # Skip when md5 matches with the server md5
+            :
+        else
+            download_rules
+        fi
+    else
+        download_rules
+    fi
+
 
     while read line
     do
-        eval echo "$line" >> "$TMP_FILE"
-    done < "$TMP_DOWNLOAD"
+        eval echo "${line}" >> "${TMP_FILE}"
+    done < "${DOWNLOAD_RULES}"
 
     # Add the commit
-    echo COMMIT >> "$TMP_FILE"
+    echo COMMIT >> "${TMP_FILE}"
 
-    iptables-restore -T filter < "$TMP_FILE" || (logger -t turris-firewall-rules "Failed to load downloaded rules" && exit 1)
+    iptables-restore -T filter < "${TMP_FILE}" || (logger -t turris-firewall-rules "Failed to load downloaded rules" && exit 1)
 
-    rm "$TMP_FILE" "$TMP_DOWNLOAD"
+    rm "${TMP_FILE}"
 fi
