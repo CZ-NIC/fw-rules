@@ -16,7 +16,9 @@ PERSISTENT_RULES="/usr/share/firewall/turris-rules"
 DOWNLOAD_RULES="${DOWNLOAD_DIR}/turris-rules"
 DOWNLOAD_SIGN="${DOWNLOAD_RULES}.sign"
 SIGN_KEY="/etc/ssl/turris-rules.pub"
+DOWNLOAD_INTERVAL=$((4*60))
 WAN=""
+
 while [ -z "${WAN}" ]; do
     . $IPKG_INSTROOT/lib/functions.sh
 
@@ -53,8 +55,31 @@ download_rules() {
     fi
 }
 
+# Check whether the selected file is older then X seconds
+download_needed() {
+    local file="$1"
+    local seconds="$2"
+    local current=`date +%s`
+    if [ -f "${file}" ]; then
+        local file_age=`date -r "${file}" +%s`
+        if [ "${current}" -lt "$((file_age + seconds))" ] ; then
+            return 1
+        else
+            return 0
+        fi
+        return 1
+    else
+        return 0
+    fi
+}
+
 # Download sign of the rules
 download_sign() {
+
+    if ! download_needed "${DOWNLOAD_SIGN}" "${DOWNLOAD_INTERVAL}" ; then
+        return 0
+    fi
+
     curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${SIGN_URL}" -o "${DOWNLOAD_SIGN}"
     if [ $? -eq 0 ]; then
         return 0
@@ -104,6 +129,9 @@ if [ -n "${WAN}" ]; then
     # Create directory for the rules
     mkdir -p "${DOWNLOAD_DIR}"
 
+    # Try to update CRL
+    get-api-crl 1>/dev/null 2>&1
+
     # Download the rule signature
     download_sign
 
@@ -141,5 +169,5 @@ if [ -n "${WAN}" ]; then
         fi
     fi
 
-    rm -f "${TMP_FILE}" "${DOWNLOAD_SIGN}"
+    rm -f "${TMP_FILE}"
 fi
