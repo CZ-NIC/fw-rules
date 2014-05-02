@@ -91,7 +91,7 @@ download_sign() {
 
 # Verifies the signature
 verify_signature() {
-    openssl dgst -verify "${SIGN_KEY}" -signature "${DOWNLOAD_SIGN}" "$1" > /dev/null 2>&1 
+    openssl dgst -sha256 -verify "${SIGN_KEY}" -signature "${DOWNLOAD_SIGN}" "$1" > /dev/null 2>&1
     return $?
 }
 
