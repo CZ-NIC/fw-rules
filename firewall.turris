@@ -9,7 +9,7 @@
 #
 
 DOWNLOAD_DIR="/tmp/fw-rules"
-RULES_URL="https://api.turris.cz/firewall-test/turris-rules"
+RULES_URL="https://api.turris.cz/firewall/turris-rules"
 SIGN_URL="${RULES_URL}.sign"
 TMP_FILE="/tmp/iptables.rules"
 PERSISTENT_RULES="/usr/share/firewall/turris-rules"
