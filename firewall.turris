@@ -19,6 +19,11 @@ SIGN_KEY="/etc/ssl/turris-rules.pub"
 DOWNLOAD_INTERVAL=$((4*60))
 WAN=""
 
+TEST_SIGN_KEY="${DOWNLOAD_DIR}/turris-rules.pub"
+TEST_RULES_URL="https://api.turris.cz/firewall-test/turris-rules"
+TEST_SIGN_KEY_URL="https://api.turris.cz/firewall-test/turris-rules.pub"
+TEST_SIGN_URL="https://api.turris.cz/firewall-test/turris-rules.sign"
+
 while [ -z "${WAN}" ]; do
     . $IPKG_INSTROOT/lib/functions.sh
 
@@ -46,11 +51,19 @@ done
 
 # Download FW rules from the server
 download_rules() {
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${RULES_URL}" -o "${DOWNLOAD_RULES}"
+
+    if [ "${test}" == "true" ]; then
+        url="${TEST_RULES_URL}"
+    else
+        url="${RULES_URL}"
+    fi
+
+    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url}" -o "${DOWNLOAD_RULES}"
+
     if [ $? -eq 0 ]; then
         return 0
     else
-        logger -t turris-firewall-rules "Failed to download ${RULES_URL}"
+        logger -t turris-firewall-rules "Failed to download ${url}"
         return 1
     fi
 }
@@ -80,18 +93,32 @@ download_sign() {
         return 0
     fi
 
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${SIGN_URL}" -o "${DOWNLOAD_SIGN}"
+    if [ "${test}" == "true" ]; then
+        url="${TEST_SIGN_URL}"
+    else
+        url="${SIGN_URL}"
+    fi
+
+    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url}" -o "${DOWNLOAD_SIGN}"
+
     if [ $? -eq 0 ]; then
         return 0
     else
-        logger -t turris-firewall-rules "Failed to download ${SIGN_URL}"
+        logger -t turris-firewall-rules "Failed to download ${url}"
         return 1
     fi
 }
 
 # Verifies the signature
 verify_signature() {
-    openssl dgst -sha256 -verify "${SIGN_KEY}" -signature "${DOWNLOAD_SIGN}" "$1" > /dev/null 2>&1
+
+    if [ "${test}" == "true" ]; then
+        key="${TEST_SIGN_KEY}"
+    else
+        key="${SIGN_KEY}"
+    fi
+
+    openssl dgst -sha256 -verify "${key}" -signature "${DOWNLOAD_SIGN}" "$1" > /dev/null 2>&1
     return $?
 }
 
@@ -120,8 +147,33 @@ update_file() {
     fi
 }
 
+# are we in the test branch?
+test_branch() {
+
+    if x=$(command -v getbranch) ; then
+        branch=$(getbranch)
+    else
+        return 1
+    fi
+
+    if [ `getbranch` == "test" ] ; then
+        return 0
+    fi
+
+    return 1
+}
+
 if [ -n "${WAN}" ]; then
     CHAIN="turris"
+
+    if test_branch ; then
+        if [ ! -f "${TEST_SIGN_KEY}" ] ; then
+            curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${TEST_SIGN_KEY_URL}" -o "${TEST_SIGN_KEY}"
+        fi
+        test="true"
+    else
+        test="false"
+    fi
 
     # Don't store the the rules in turris chain and COMMIT
     iptables-save -t filter | grep -v '^-. turris' | grep -v COMMIT > "${TMP_FILE}"
