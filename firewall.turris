@@ -17,6 +17,7 @@ DOWNLOAD_RULES="${DOWNLOAD_DIR}/turris-rules"
 DOWNLOAD_SIGN="${DOWNLOAD_RULES}.sign"
 SIGN_KEY="/etc/ssl/turris-rules.pub"
 DOWNLOAD_INTERVAL=$((4*60))
+VERSION=$(opkg list-installed turris-firewall-rules | sed 's/[^0-9]*//')
 WAN=""
 
 TEST_SIGN_KEY="${DOWNLOAD_DIR}/turris-rules.pub"
@@ -70,7 +71,7 @@ download_rules() {
     if [ $? -eq 0 ]; then
         return 0
     else
-        logger -t turris-firewall-rules "Failed to download ${url}"
+        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url}"
         return 1
     fi
 }
@@ -111,7 +112,7 @@ download_sign() {
     if [ $? -eq 0 ]; then
         return 0
     else
-        logger -t turris-firewall-rules "Failed to download ${url}"
+        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url}"
         return 1
     fi
 }
@@ -136,7 +137,7 @@ update_file() {
     if [ -f "${DOWNLOAD_SIGN}" -a -f "${DOWNLOAD_RULES}" ]; then
         verify_signature "${DOWNLOAD_RULES}"
         if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules "Incorrect signature for downloaded rules"
+            logger -t turris-firewall-rules "(v${VERSION}) Incorrect signature for downloaded rules"
             return 1
         fi
     else
@@ -149,12 +150,12 @@ update_file() {
         if [ $? -eq 1 ]; then
             local new_md5=$(file_md5 "${DOWNLOAD_RULES}")
             local old_md5=$(file_md5 "${PERSISTENT_RULES}")
-            logger -t turris-firewall-rules "Switching fw rules ${old_md5} -> ${new_md5}"
+            logger -t turris-firewall-rules "(v${VERSION}) Switching fw rules ${old_md5} -> ${new_md5}"
             cp "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
         fi
     else
         local new_md5=$(file_md5 "${DOWNLOAD_RULES}")
-        logger -t turris-firewall-rules "Setting fw rules ${new_md5}"
+        logger -t turris-firewall-rules "(v${VERSION}) Setting fw rules ${new_md5}"
         cp "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
     fi
 }
@@ -228,7 +229,7 @@ if [ -n "${WAN}" ]; then
 
         iptables-restore -T filter < "${TMP_FILE}"
         if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules "Failed to load downloaded rules"
+            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded rules"
             exit 1
         fi
     fi
