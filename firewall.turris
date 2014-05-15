@@ -49,6 +49,13 @@ while [ -z "${WAN}" ]; do
     break
 done
 
+
+# Return md5 of a file the file should exist
+file_md5() {
+    local file="$1"
+    echo $(md5sum "${file}" | sed 's/ .*//')
+}
+
 # Download FW rules from the server
 download_rules() {
 
@@ -140,9 +147,14 @@ update_file() {
     if [ -f "${PERSISTENT_RULES}" ]; then
         cmp -s "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
         if [ $? -eq 1 ]; then
+            local new_md5=$(file_md5 "${DOWNLOAD_RULES}")
+            local old_md5=$(file_md5 "${PERSISTENT_RULES}")
+            logger -t turris-firewall-rules "Switching fw rules ${old_md5} -> ${new_md5}"
             cp "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
         fi
     else
+        local new_md5=$(file_md5 "${DOWNLOAD_RULES}")
+        logger -t turris-firewall-rules "Setting fw rules ${new_md5}"
         cp "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
     fi
 }
