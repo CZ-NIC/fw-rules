@@ -216,8 +216,8 @@ if [ -n "${WAN}" ]; then
         test="false"
     fi
 
-    # Don't store the the rules in turris chain and COMMIT
-    iptables-save -t filter | grep -v '^-. turris' | grep -v COMMIT > "${TMP_FILE}"
+    # Don't any turris related rules and COMMIT
+    iptables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE}"
 
     # Create directory for the rules
     mkdir -p "${DOWNLOAD_DIR}"
@@ -247,6 +247,8 @@ if [ -n "${WAN}" ]; then
 
     if [ -f "${PERSISTENT_RULES}" ]; then
 
+        echo ':turris - [0:0]' >> "${TMP_FILE}"
+        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
         while read line
         do
             eval echo "${line}" >> "${TMP_FILE}"
