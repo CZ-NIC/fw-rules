@@ -36,22 +36,39 @@
 #   option path /usr/share/firewall/turris
 #
 
-DOWNLOAD_DIR="/tmp/fw-rules"
+# Enable debug
+if [ -n "${DEBUG}" ] ; then
+    set -x
+fi
+
+
 RULES_URL="https://api.turris.cz/firewall/turris-rules"
 SIGN_URL="${RULES_URL}.sign"
+
+IPSETS_URL="https://api.turris.cz/firewall/turris-ipsets"
+IPSETS_SIGN_URL="${IPSETS_URL}.sign"
+
 TMP_FILE="/tmp/iptables.rules"
 PERSISTENT_RULES="/usr/share/firewall/turris-rules"
+PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets"
+
+DOWNLOAD_DIR="/tmp/fw-rules"
 DOWNLOAD_RULES="${DOWNLOAD_DIR}/turris-rules"
 DOWNLOAD_SIGN="${DOWNLOAD_RULES}.sign"
+DOWNLOAD_IPSETS="${DOWNLOAD_DIR}/turris-ipsets"
+DOWNLOAD_IPSETS_SIGN="${DOWNLOAD_IPSETS}.sign"
+
 SIGN_KEY="/etc/ssl/turris-rules.pub"
 DOWNLOAD_INTERVAL=$((4*60))
 VERSION=$(opkg list-installed turris-firewall-rules | sed 's/[^0-9]*//')
 WAN=""
 
 TEST_SIGN_KEY="${DOWNLOAD_DIR}/turris-rules.pub"
-TEST_RULES_URL="https://api.turris.cz/firewall-test/turris-rules"
 TEST_SIGN_KEY_URL="https://api.turris.cz/firewall-test/turris-rules.pub"
-TEST_SIGN_URL="https://api.turris.cz/firewall-test/turris-rules.sign"
+TEST_RULES_URL="https://api.turris.cz/firewall-test/turris-rules"
+TEST_SIGN_URL="${TEST_RULES_URL}.sign"
+TEST_IPSETS_URL="https://api.turris.cz/firewall-test/turris-ipsets"
+TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
 
 while [ -z "${WAN}" ]; do
     . $IPKG_INSTROOT/lib/functions.sh
@@ -78,6 +95,14 @@ while [ -z "${WAN}" ]; do
     break
 done
 
+# Are ipset modules for ipset loaded
+test_ipset_modules() {
+    if [ -n "$(lsmod | grep ip_set)" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
 
 # Return md5 of a file the file should exist
 file_md5() {
@@ -85,21 +110,58 @@ file_md5() {
     echo $(md5sum "${file}" | sed 's/ .*//')
 }
 
-# Download FW rules from the server
-download_rules() {
 
-    if [ "${test}" == "true" ]; then
-        url="${TEST_RULES_URL}"
-    else
-        url="${RULES_URL}"
+download() {
+    local master_url="$1"
+    local test_url="$2"
+    local destination="$3"
+    local interval="$4"
+
+    if [ -n "$interval" ]; then
+        if ! download_needed "${destination}" "${interval}" ; then
+            return 0
+        fi
     fi
 
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url}" -o "${DOWNLOAD_RULES}"
+    if [ "${test}" == "true" ]; then
+        url="$test_url"
+    else
+        url="$master_url"
+    fi
 
+    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url}" -o "${destination}"
     if [ $? -eq 0 ]; then
         return 0
     else
         logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url}"
+        return 1
+    fi
+}
+
+# Download FW rules from the server
+download_rules() {
+
+    if [ "${test}" == "true" ]; then
+        url_rules="${TEST_RULES_URL}"
+        url_ipsets="${TEST_IPSETS_URL}"
+    else
+        url_rules="${RULES_URL}"
+        url_ipsets="${IPSETS_URL}"
+    fi
+
+    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url_rules}" -o "${DOWNLOAD_RULES}"
+    if [ $? -eq 0 ]; then
+        return 0
+    else
+        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url_rules}"
+        return 1
+    fi
+
+    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url_ipsets}" -o "${DOWNLOAD_IPSETS}"
+    if [ $? -eq 0 ]; then
+        return 0
+    else
+        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url_ipsets}"
         return 1
     fi
 }
@@ -126,27 +188,41 @@ download_needed() {
 download_sign() {
 
     if ! download_needed "${DOWNLOAD_SIGN}" "${DOWNLOAD_INTERVAL}" ; then
-        return 0
+        if ! download_needed "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_INTERVAL}" ; then
+            return 0
+        fi
     fi
 
     if [ "${test}" == "true" ]; then
-        url="${TEST_SIGN_URL}"
+        url_rules="${TEST_SIGN_URL}"
+        url_ipsets="${TEST_IPSETS_SIGN_URL}"
     else
-        url="${SIGN_URL}"
+        url_rules="${SIGN_URL}"
+        url_ipsets="${IPSETS_SIGN_URL}"
     fi
 
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url}" -o "${DOWNLOAD_SIGN}"
-
+    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url_rules}" -o "${DOWNLOAD_SIGN}"
     if [ $? -eq 0 ]; then
         return 0
     else
-        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url}"
+        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url_rules}"
+        return 1
+    fi
+
+    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url_ipsets}" -o "${DOWNLOAD_IPSETS}"
+    if [ $? -eq 0 ]; then
+        return 0
+    else
+        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url_ipsets}"
         return 1
     fi
 }
 
-# Verifies the signature
+# Verifies signature
 verify_signature() {
+
+    local file="$1"
+    local signature="$2"
 
     if [ "${test}" == "true" ]; then
         key="${TEST_SIGN_KEY}"
@@ -154,18 +230,23 @@ verify_signature() {
         key="${SIGN_KEY}"
     fi
 
-    openssl dgst -sha256 -verify "${key}" -signature "${DOWNLOAD_SIGN}" "$1" > /dev/null 2>&1
+    openssl dgst -sha256 -verify "${key}" -signature "${signature}" "${file}" > /dev/null 2>&1
     return $?
 }
 
 # Update the persistent file
 update_file() {
 
+    local signature="$1"
+    local downloaded="$2"
+    local persistent="$3"
+    local file_name=$(basename "${persistent}")
+
     # test the signature
-    if [ -f "${DOWNLOAD_SIGN}" -a -f "${DOWNLOAD_RULES}" ]; then
-        verify_signature "${DOWNLOAD_RULES}"
+    if [ -f "${signature}" -a -f "${downloaded}" ]; then
+        verify_signature "${downloaded}" "${signature}"
         if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules "(v${VERSION}) Incorrect signature for downloaded rules"
+            logger -t turris-firewall-rules "(v${VERSION}) Incorrect signature for downloaded ${file_name}"
             return 1
         fi
     else
@@ -173,18 +254,18 @@ update_file() {
     fi
 
     # Update the files
-    if [ -f "${PERSISTENT_RULES}" ]; then
-        cmp -s "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
+    if [ -f "${persistent}" ]; then
+        cmp -s "${downloaded}" "${persistent}"
         if [ $? -eq 1 ]; then
-            local new_md5=$(file_md5 "${DOWNLOAD_RULES}")
-            local old_md5=$(file_md5 "${PERSISTENT_RULES}")
-            logger -t turris-firewall-rules "(v${VERSION}) Switching fw rules ${old_md5} -> ${new_md5}"
-            cp "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
+            local new_md5=$(file_md5 "${downloaded}")
+            local old_md5=$(file_md5 "${persistent}")
+            logger -t turris-firewall-rules "(v${VERSION}) Switching ${file_name} ${old_md5} -> ${new_md5}"
+            cp "${downloaded}" "${persistent}"
         fi
     else
-        local new_md5=$(file_md5 "${DOWNLOAD_RULES}")
-        logger -t turris-firewall-rules "(v${VERSION}) Setting fw rules ${new_md5}"
-        cp "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
+        local new_md5=$(file_md5 "${downloaded}")
+        logger -t turris-firewall-rules "(v${VERSION}) Setting ${file_name} ${new_md5}"
+        cp "${downloaded}" "${persistent}"
     fi
 }
 
@@ -204,6 +285,87 @@ test_branch() {
     return 1
 }
 
+apply_iptables() {
+    if [ -f "${PERSISTENT_RULES}" ]; then
+        # Append header to file
+        echo ':turris - [0:0]' >> "${TMP_FILE}"
+        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
+        while read line
+        do
+            eval echo "${line}" >> "${TMP_FILE}"
+        done < "${PERSISTENT_RULES}"
+
+        # Add the commit
+        echo COMMIT >> "${TMP_FILE}"
+
+        # Apply iptables
+        iptables-restore -T filter < "${TMP_FILE}"
+        if [ $? -eq 1 ]; then
+            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded rules"
+            exit 1
+        fi
+    fi
+}
+
+apply_isets() {
+    if [ -f "${PERSISTENT_IPSETS}" ]; then
+        # Append header to file
+        echo ':turris - [0:0]' >> "${TMP_FILE}"
+        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
+
+
+        # Load new ipsets
+        ipset restore -f "${PERSISTENT_IPSETS}"
+
+        #for ipset_name in $(ipset list | grep 'Name: turris_' | cut -d" " -f2-); do
+        #    ipset destroy "${ipset_name}"
+        #done
+
+        # Create all if exist swap otherwise rename append rules
+        old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
+        new_names="$(grep create ${PERSISTENT_IPSETS} | cut -d' ' -f2 | sort)"
+
+        # Create iptables rules
+        for ipset_name in ${new_names}; do
+            rule_id="$(echo ${ipset_name} | cut -d_ -f2)"
+            action="$(echo ${ipset_name} | cut -d_ -f3)"
+            type="$(echo ${ipset_name} | cut -d_ -f4)"
+            ipset_name_x="${ipset_name}_X"
+
+            if [ "${old_names/${ipset_name_x}}" = "${old_names}" ]; then
+                # set is brand new -> rename
+                ipset rename "${ipset_name}" "${ipset_name_x}"
+            else
+                # set with is active -> swap and delete
+                ipset swap "${ipset_name}" "${ipset_name_x}"
+                ipset destroy "${ipset_name}"
+            fi
+            case "${action}" in
+                "b")
+                    echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${TMP_FILE}"
+                    ;;
+                "l")
+                    echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
+                    ;;
+                "lb")
+                    echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
+                    echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${TMP_FILE}"
+                    ;;
+            esac
+        done
+
+        # Add the commit
+        echo COMMIT >> "${TMP_FILE}"
+
+        # Apply iptables
+        iptables-restore -T filter < "${TMP_FILE}"
+        if [ $? -eq 1 ]; then
+            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded rules"
+            exit 1
+        fi
+    fi
+}
+
 if [ -n "${WAN}" ]; then
     CHAIN="turris"
 
@@ -216,6 +378,12 @@ if [ -n "${WAN}" ]; then
         test="false"
     fi
 
+    if test_ipset_modules ; then
+        modules="true"
+    else
+        modules="false"
+    fi
+
     # Don't any turris related rules and COMMIT
     iptables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE}"
 
@@ -225,43 +393,58 @@ if [ -n "${WAN}" ]; then
     # Try to update CRL
     get-api-crl 1>/dev/null 2>&1
 
-    # Download the rule signature
-    download_sign
+    if test_ipset_modules ; then
+        # Using ipset
 
-    # Get signature instead of downloading the whole file
-    if [ -f "${PERSISTENT_RULES}" ]; then
-        verify_signature "${PERSISTENT_RULES}"
-        if [ $? -eq 0 ]; then
-            # Skip when signature matches
-            :
+        # Download the ipsets signature
+        download "${IPSETS_SIGN_URL}" "${TEST_IPSETS_SIGN_URL}" "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_INTERVAL}"
+
+        # test whether is necessary to download the whole file
+        if [ -f "${PERSISTENT_IPSETS}" ]; then
+            verify_signature "${PERSISTENT_IPSETS}" "${DOWNLOAD_IPSETS_SIGN}"
+            if [ $? -eq 0 ]; then
+                # Skip when signature matches
+                :
+            else
+                # download new rules
+                download "${IPSETS_URL}" "${TEST_IPSETS_URL}" "${DOWNLOAD_IPSETS}"
+            fi
         else
-            # download new rules
-            download_rules
+            download "${IPSETS_URL}" "${TEST_IPSETS_URL}" "${DOWNLOAD_IPSETS}"
         fi
+
+        # update file in the persistent memory
+        update_file "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_IPSETS}" "${PERSISTENT_IPSETS}"
+
+        # Apply the sets
+        apply_isets
+
     else
-        download_rules
-    fi
+        logger -t turris-firewall-rules "(v${VERSION}) Ipset modules not loaded using iptables instead"
+        # Using iptables
 
-    # update file in the persistent memory
-    update_file
+        # Download the rule signature
+        download "${SIGN_URL}" "${TEST_SIGN_URL}" "${DOWNLOAD_SIGN}" "${DOWNLOAD_INTERVAL}"
 
-    if [ -f "${PERSISTENT_RULES}" ]; then
-
-        echo ':turris - [0:0]' >> "${TMP_FILE}"
-        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
-        while read line
-        do
-            eval echo "${line}" >> "${TMP_FILE}"
-        done < "${PERSISTENT_RULES}"
-
-        # Add the commit
-        echo COMMIT >> "${TMP_FILE}"
-
-        iptables-restore -T filter < "${TMP_FILE}"
-        if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded rules"
-            exit 1
+        # test whether is necessary to download the whole file
+        if [ -f "${PERSISTENT_RULES}" ]; then
+            verify_signature "${PERSISTENT_RULES}" "${DOWNLOAD_SIGN}"
+            if [ $? -eq 0 ]; then
+                # Skip when signature matches
+                :
+            else
+                # download new rules
+                download "${RULES_URL}" "${TEST_RULES_URL}" "${DOWNLOAD_RULES}"
+            fi
+        else
+            download "${RULES_URL}" "${TEST_RULES_URL}" "${DOWNLOAD_RULES}"
         fi
+
+        # update file in the persistent memory
+        update_file "${DOWNLOAD_SIGN}" "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
+
+        # Apply the rules
+        apply_iptables
     fi
 
     rm -f "${TMP_FILE}"
