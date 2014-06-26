@@ -313,7 +313,6 @@ apply_isets() {
         echo ':turris - [0:0]' >> "${TMP_FILE}"
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
 
-
         # Load new ipsets
         ipset restore -f "${PERSISTENT_IPSETS}"
 
@@ -342,14 +341,27 @@ apply_isets() {
             fi
             case "${action}" in
                 "b")
-                    echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${TMP_FILE}"
+                    if [ "${type}" = "a" ]; then
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${TMP_FILE}"
+                    elif [ "${type}" = "ap" ]; then
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${TMP_FILE}"
+                    fi
                     ;;
                 "l")
-                    echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
+                    if [ "${type}" = "a" ]; then
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
+                    elif [ "${type}" = "ap" ]; then
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
+                    fi
                     ;;
                 "lb")
-                    echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
-                    echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${TMP_FILE}"
+                    if [ "${type}" = "a" ]; then
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${TMP_FILE}"
+                    elif [ "${type}" = "ap" ]; then
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${TMP_FILE}"
+                    fi
                     ;;
             esac
         done
