@@ -138,34 +138,6 @@ download() {
     fi
 }
 
-# Download FW rules from the server
-download_rules() {
-
-    if [ "${test}" == "true" ]; then
-        url_rules="${TEST_RULES_URL}"
-        url_ipsets="${TEST_IPSETS_URL}"
-    else
-        url_rules="${RULES_URL}"
-        url_ipsets="${IPSETS_URL}"
-    fi
-
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url_rules}" -o "${DOWNLOAD_RULES}"
-    if [ $? -eq 0 ]; then
-        return 0
-    else
-        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url_rules}"
-        return 1
-    fi
-
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url_ipsets}" -o "${DOWNLOAD_IPSETS}"
-    if [ $? -eq 0 ]; then
-        return 0
-    else
-        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url_ipsets}"
-        return 1
-    fi
-}
-
 # Check whether the selected file is older then X seconds
 download_needed() {
     local file="$1"
@@ -181,40 +153,6 @@ download_needed() {
         return 1
     else
         return 0
-    fi
-}
-
-# Download sign of the rules
-download_sign() {
-
-    if ! download_needed "${DOWNLOAD_SIGN}" "${DOWNLOAD_INTERVAL}" ; then
-        if ! download_needed "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_INTERVAL}" ; then
-            return 0
-        fi
-    fi
-
-    if [ "${test}" == "true" ]; then
-        url_rules="${TEST_SIGN_URL}"
-        url_ipsets="${TEST_IPSETS_SIGN_URL}"
-    else
-        url_rules="${SIGN_URL}"
-        url_ipsets="${IPSETS_SIGN_URL}"
-    fi
-
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url_rules}" -o "${DOWNLOAD_SIGN}"
-    if [ $? -eq 0 ]; then
-        return 0
-    else
-        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url_rules}"
-        return 1
-    fi
-
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url_ipsets}" -o "${DOWNLOAD_IPSETS}"
-    if [ $? -eq 0 ]; then
-        return 0
-    else
-        logger -t turris-firewall-rules "(v${VERSION}) Failed to download ${url_ipsets}"
-        return 1
     fi
 }
 
