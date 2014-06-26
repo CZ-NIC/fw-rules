@@ -49,6 +49,7 @@ IPSETS_URL="https://api.turris.cz/firewall/turris-ipsets"
 IPSETS_SIGN_URL="${IPSETS_URL}.sign"
 
 TMP_FILE="/tmp/iptables.rules"
+TMP_FILE6="/tmp/ip6tables.rules"
 PERSISTENT_RULES="/usr/share/firewall/turris-rules"
 PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets"
 
@@ -227,19 +228,34 @@ apply_iptables() {
     if [ -f "${PERSISTENT_RULES}" ]; then
         # Append header to file
         echo ':turris - [0:0]' >> "${TMP_FILE}"
+        echo ':turris - [0:0]' >> "${TMP_FILE6}"
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
+        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}"
         while read line
         do
-            eval echo "${line}" >> "${TMP_FILE}"
+            ip=$(echo "${line}" | sed 's/.* -d \([^ ]*\) .*/\1/')
+            if [ "${ip/:}" = "${ip}" ]; then
+                # ipv4
+                eval echo "${line}" >> "${TMP_FILE}"
+            else
+                # ipv6
+                eval echo "${line}" >> "${TMP_FILE6}"
+            fi
         done < "${PERSISTENT_RULES}"
 
         # Add the commit
         echo COMMIT >> "${TMP_FILE}"
+        echo COMMIT >> "${TMP_FILE6}"
 
         # Apply iptables
         iptables-restore -T filter < "${TMP_FILE}"
         if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded rules"
+            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded ipv4 rules"
+            exit 1
+        fi
+        ip6tables-restore -T filter < "${TMP_FILE6}"
+        if [ $? -eq 1 ]; then
+            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded ipv6 rules"
             exit 1
         fi
     fi
@@ -247,16 +263,14 @@ apply_iptables() {
 
 apply_isets() {
     if [ -f "${PERSISTENT_IPSETS}" ]; then
-        # Append header to file
+        # Append header to files
         echo ':turris - [0:0]' >> "${TMP_FILE}"
+        echo ':turris - [0:0]' >> "${TMP_FILE6}"
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
+        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}"
 
         # Load new ipsets
         ipset restore -f "${PERSISTENT_IPSETS}"
-
-        #for ipset_name in $(ipset list | grep 'Name: turris_' | cut -d" " -f2-); do
-        #    ipset destroy "${ipset_name}"
-        #done
 
         # Create all if exist swap otherwise rename append rules
         old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
@@ -267,6 +281,7 @@ apply_isets() {
             rule_id="$(echo ${ipset_name} | cut -d_ -f2)"
             action="$(echo ${ipset_name} | cut -d_ -f3)"
             type="$(echo ${ipset_name} | cut -d_ -f4)"
+            ip_type="$(echo ${ipset_name} | cut -d_ -f5)"
             ipset_name_x="${ipset_name}_X"
 
             if [ "${old_names/${ipset_name_x}}" = "${old_names}" ]; then
@@ -277,28 +292,34 @@ apply_isets() {
                 ipset swap "${ipset_name}" "${ipset_name_x}"
                 ipset destroy "${ipset_name}"
             fi
+
+            if [ "${ip_type}" = 4 ]; then
+                target_file="${TMP_FILE}"
+            elif [ "${ip_type}" = 6 ]; then
+                target_file="${TMP_FILE6}"
+            fi
             case "${action}" in
                 "b")
                     if [ "${type}" = "a" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${TMP_FILE}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${target_file}"
                     elif [ "${type}" = "ap" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${TMP_FILE}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${target_file}"
                     fi
                     ;;
                 "l")
                     if [ "${type}" = "a" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                     elif [ "${type}" = "ap" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                     fi
                     ;;
                 "lb")
                     if [ "${type}" = "a" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${TMP_FILE}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${target_file}"
                     elif [ "${type}" = "ap" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${TMP_FILE}"
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${TMP_FILE}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
+                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${target_file}"
                     fi
                     ;;
             esac
@@ -306,11 +327,17 @@ apply_isets() {
 
         # Add the commit
         echo COMMIT >> "${TMP_FILE}"
+        echo COMMIT >> "${TMP_FILE6}"
 
         # Apply iptables
         iptables-restore -T filter < "${TMP_FILE}"
         if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded rules"
+            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded ipv4 rules"
+            exit 1
+        fi
+        ip6tables-restore -T filter < "${TMP_FILE6}"
+        if [ $? -eq 1 ]; then
+            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded ipv6 rules"
             exit 1
         fi
     fi
@@ -336,6 +363,7 @@ if [ -n "${WAN}" ]; then
 
     # Don't any turris related rules and COMMIT
     iptables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE}"
+    ip6tables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE6}"
 
     # Create directory for the rules
     mkdir -p "${DOWNLOAD_DIR}"
@@ -398,4 +426,5 @@ if [ -n "${WAN}" ]; then
     fi
 
     rm -f "${TMP_FILE}"
+    rm -f "${TMP_FILE6}"
 fi
