@@ -231,15 +231,19 @@ apply_iptables() {
         echo ':turris - [0:0]' >> "${TMP_FILE6}"
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}"
+        count=0
+        count6=6
         while read line
         do
             ip=$(echo "${line}" | sed 's/.* -d \([^ ]*\) .*/\1/')
             if [ "${ip/:}" = "${ip}" ]; then
                 # ipv4
                 eval echo "${line}" >> "${TMP_FILE}"
+                count=$((${count} + 1))
             else
                 # ipv6
                 eval echo "${line}" >> "${TMP_FILE6}"
+                count6=$((${count6} + 1))
             fi
         done < "${PERSISTENT_RULES}"
 
@@ -249,12 +253,16 @@ apply_iptables() {
 
         # Apply iptables
         iptables-restore -T filter < "${TMP_FILE}"
-        if [ $? -eq 1 ]; then
+        if [ $? -eq 0 ]; then
+            logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 rule(s) were loaded"
+        else
             logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded ipv4 rules"
             exit 1
         fi
         ip6tables-restore -T filter < "${TMP_FILE6}"
-        if [ $? -eq 1 ]; then
+        if [ $? -eq 0 ]; then
+            logger -t turris-firewall-rules "(v${VERSION}) ${count6} ipv6 rule(s) were loaded"
+        else
             logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded ipv6 rules"
             exit 1
         fi
@@ -268,6 +276,9 @@ apply_isets() {
         echo ':turris - [0:0]' >> "${TMP_FILE6}"
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}"
+
+        count="$(grep '^add [^ ]*_4' ${PERSISTENT_IPSETS} | wc -l)"
+        count6="$(grep '^add [^ ]*_6' ${PERSISTENT_IPSETS} | wc -l)"
 
         # Load new ipsets
         ipset restore -f "${PERSISTENT_IPSETS}"
@@ -340,6 +351,8 @@ apply_isets() {
             logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded ipv6 rules"
             exit 1
         fi
+
+        logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded"
     fi
 }
 
