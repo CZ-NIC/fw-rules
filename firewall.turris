@@ -308,17 +308,17 @@ apply_isets() {
                     ;;
                 "l")
                     if [ "${type}" = "a" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
+                        echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                     elif [ "${type}" = "ap" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
+                        echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                     fi
                     ;;
                 "lb")
                     if [ "${type}" = "a" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
+                        echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                         echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${target_file}"
                     elif [ "${type}" = "ap" ]; then
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
+                        echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                         echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${target_file}"
                     fi
                     ;;
