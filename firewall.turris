@@ -232,7 +232,7 @@ apply_iptables() {
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}"
         count=0
-        count6=6
+        count6=0
         while read line
         do
             ip=$(echo "${line}" | sed 's/.* -d \([^ ]*\) .*/\1/')
