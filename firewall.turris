@@ -52,6 +52,7 @@ TMP_FILE="/tmp/iptables.rules"
 TMP_FILE6="/tmp/ip6tables.rules"
 PERSISTENT_RULES="/usr/share/firewall/turris-rules"
 PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets"
+ULOGD_FILE="/tmp/etc/ulogd-turris.conf"
 
 DOWNLOAD_DIR="/tmp/fw-rules"
 DOWNLOAD_RULES="${DOWNLOAD_DIR}/turris-rules"
@@ -103,6 +104,27 @@ test_ipset_modules() {
     else
         return 1
     fi
+}
+
+# is NFLOG module loaded
+test_nflog_modules() {
+    if [ -n "$(lsmod | grep xt_NFLOG)" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Should load NFLOG
+test_nflog() {
+    if test_nflog_modules ; then
+        # test using uci
+        uci_val="$(uci -q get pcap-dumps.firewall.enabled)"
+        if [ $? -eq 0 -a "$uci_val" = "1" ]; then
+            return 0
+        fi
+    fi
+    return 1
 }
 
 # Return md5 of a file the file should exist
@@ -224,6 +246,36 @@ test_branch() {
     return 1
 }
 
+# create config for ulogd
+make_ulogd_config() {
+    local ids="$@"
+    local idx=0
+
+    # Part of a global section
+    echo "This file is generated using turris-firewall-rules any local changes will be destroyed." > "${ULOGD_FILE}"
+    echo "[global]" >> "${ULOGD_FILE}"
+    echo "plugin=\"/usr/lib/ulogd/ulogd_inppkt_NFLOG.so\"" >> "${ULOGD_FILE}"
+    echo "plugin=\"/usr/lib/ulogd/ulogd_output_PCAP.so\"" >> "${ULOGD_FILE}"
+    echo "plugin=\"/usr/lib/ulogd/ulogd_raw2packet_BASE.so\"" >> "${ULOGD_FILE}"
+
+    # stacks
+    for rule_id in $ids; do
+        group_id=$(($idx + 1000))
+        echo "stack=log${group_id}:NFLOG,base1:BASE,pcap${group_id}:PCAP" >> "${ULOGD_FILE}"
+        idx=$(($idx + 1))
+    done
+
+    idx=0
+    # sections
+    for rule_id in $ids; do
+        group_id=$(($idx + 1000))
+        echo "[pcap${group_id}]" >> "${ULOGD_FILE}"
+        echo "file=\"/var/log/turris-${rule_id}.pcap2\"" >> "${ULOGD_FILE}"
+        echo "sync=1" >> "${ULOGD_FILE}"
+        idx=$(($idx + 1))
+    done
+}
+
 apply_iptables() {
     if [ -f "${PERSISTENT_RULES}" ]; then
         # Append header to file
@@ -287,6 +339,18 @@ apply_isets() {
         old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
         new_names="$(grep create ${PERSISTENT_IPSETS} | cut -d' ' -f2 | sort)"
 
+        # Should NFLOG be activated (to be applied)
+        nflog_idx=0
+        if test_nflog ; then
+            nflog="yes"
+
+            rule_ids=$(echo "${new_names}" | cut -d_ -f2)
+            make_ulogd_config "${rule_ids}"
+
+            # restart ulogd
+            /etc/init.d/ulogd restart
+        fi
+
         # Create iptables rules
         for ipset_name in ${new_names}; do
             rule_id="$(echo ${ipset_name} | cut -d_ -f2)"
@@ -294,6 +358,7 @@ apply_isets() {
             type="$(echo ${ipset_name} | cut -d_ -f4)"
             ip_type="$(echo ${ipset_name} | cut -d_ -f5)"
             ipset_name_x="${ipset_name}_X"
+            nflog_idx=$(($nflog_idx + 1))
 
             if [ "${old_names/${ipset_name_x}}" = "${old_names}" ]; then
                 # set is brand new -> rename
@@ -312,23 +377,41 @@ apply_isets() {
             case "${action}" in
                 "b")
                     if [ "${type}" = "a" ]; then
+                        if [ "${nflog}" = "yes" ]; then
+                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
+                        fi
                         echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${target_file}"
                     elif [ "${type}" = "ap" ]; then
+                        if [ "${nflog}" = "yes" ]; then
+                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
+                        fi
                         echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${target_file}"
                     fi
                     ;;
                 "l")
                     if [ "${type}" = "a" ]; then
+                        if [ "${nflog}" = "yes" ]; then
+                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
+                        fi
                         echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                     elif [ "${type}" = "ap" ]; then
+                        if [ "${nflog}" = "yes" ]; then
+                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
+                        fi
                         echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                     fi
                     ;;
                 "lb")
                     if [ "${type}" = "a" ]; then
+                        if [ "${nflog}" = "yes" ]; then
+                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
+                        fi
                         echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                         echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${target_file}"
                     elif [ "${type}" = "ap" ]; then
+                        if [ "${nflog}" = "yes" ]; then
+                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
+                        fi
                         echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
                         echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${target_file}"
                     fi
