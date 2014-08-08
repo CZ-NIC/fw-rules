@@ -353,12 +353,12 @@ apply_isets() {
             rule_ids=$(echo "${new_names}" | cut -d_ -f2)
             make_ulogd_config "${rule_ids}"
 
-            # restart ulogd
-            /etc/init.d/ulogd reload
         else
             # clear the log file when disabled
-            rm -rf "${ULOGD_FILE}"
+            echo > "${ULOGD_FILE}"
         fi
+        # restart ulogd to reinit configuration
+        /etc/init.d/ulogd restart
 
         # Create iptables rules
         for ipset_name in ${new_names}; do
