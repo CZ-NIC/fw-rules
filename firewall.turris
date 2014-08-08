@@ -53,6 +53,7 @@ TMP_FILE6="/tmp/ip6tables.rules"
 PERSISTENT_RULES="/usr/share/firewall/turris-rules"
 PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets"
 ULOGD_FILE="/tmp/etc/ulogd-turris.conf"
+PCAP_DIR="/var/log/turris-pcap"
 
 DOWNLOAD_DIR="/tmp/fw-rules"
 DOWNLOAD_RULES="${DOWNLOAD_DIR}/turris-rules"
@@ -251,6 +252,9 @@ make_ulogd_config() {
     local ids="$@"
     local idx=0
 
+    # Create a directory for logging
+    mkdir -p "${PCAP_DIR}"
+
     # Part of a global section
     echo "# This file is generated using turris-firewall-rules any local changes will be destroyed." > "${ULOGD_FILE}"
     echo "[global]" >> "${ULOGD_FILE}"
@@ -272,7 +276,7 @@ make_ulogd_config() {
         echo "[log${group_id}]" >> "${ULOGD_FILE}"
         echo "group=${group_id}" >> "${ULOGD_FILE}"
         echo "[pcap${group_id}]" >> "${ULOGD_FILE}"
-        echo "file=\"/var/log/turris-${rule_id}.pcap\"" >> "${ULOGD_FILE}"
+        echo "file=\"${PCAP_DIR}/${rule_id}.pcap\"" >> "${ULOGD_FILE}"
         echo "sync=1" >> "${ULOGD_FILE}"
         idx=$(($idx + 1))
     done
