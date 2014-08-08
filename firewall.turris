@@ -354,7 +354,7 @@ apply_isets() {
             make_ulogd_config "${rule_ids}"
 
             # restart ulogd
-            /etc/init.d/ulogd restart
+            /etc/init.d/ulogd reload
         else
             # clear the log file when disabled
             rm -rf "${ULOGD_FILE}"
