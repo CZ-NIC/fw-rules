@@ -269,8 +269,10 @@ make_ulogd_config() {
     # sections
     for rule_id in $ids; do
         group_id=$(($idx + 1000))
+        echo "[log${group_id}]" >> "${ULOGD_FILE}"
+        echo "group=${group_id}" >> "${ULOGD_FILE}"
         echo "[pcap${group_id}]" >> "${ULOGD_FILE}"
-        echo "file=\"/var/log/turris-${rule_id}.pcap2\"" >> "${ULOGD_FILE}"
+        echo "file=\"/var/log/turris-${rule_id}.pcap\"" >> "${ULOGD_FILE}"
         echo "sync=1" >> "${ULOGD_FILE}"
         idx=$(($idx + 1))
     done
