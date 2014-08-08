@@ -351,6 +351,9 @@ apply_isets() {
 
             # restart ulogd
             /etc/init.d/ulogd restart
+        else
+            # clear the log file when disabled
+            rm -rf "${ULOGD_FILE}"
         fi
 
         # Create iptables rules
