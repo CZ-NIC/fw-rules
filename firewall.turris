@@ -252,7 +252,7 @@ make_ulogd_config() {
     local idx=0
 
     # Part of a global section
-    echo "This file is generated using turris-firewall-rules any local changes will be destroyed." > "${ULOGD_FILE}"
+    echo "# This file is generated using turris-firewall-rules any local changes will be destroyed." > "${ULOGD_FILE}"
     echo "[global]" >> "${ULOGD_FILE}"
     echo "plugin=\"/usr/lib/ulogd/ulogd_inppkt_NFLOG.so\"" >> "${ULOGD_FILE}"
     echo "plugin=\"/usr/lib/ulogd/ulogd_output_PCAP.so\"" >> "${ULOGD_FILE}"
@@ -360,7 +360,6 @@ apply_isets() {
             type="$(echo ${ipset_name} | cut -d_ -f4)"
             ip_type="$(echo ${ipset_name} | cut -d_ -f5)"
             ipset_name_x="${ipset_name}_X"
-            nflog_idx=$(($nflog_idx + 1))
 
             if [ "${old_names/${ipset_name_x}}" = "${old_names}" ]; then
                 # set is brand new -> rename
@@ -419,6 +418,9 @@ apply_isets() {
                     fi
                     ;;
             esac
+
+            # increase nflog_group number
+            nflog_idx=$(($nflog_idx + 1))
         done
 
         # Add the commit
