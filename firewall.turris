@@ -282,6 +282,35 @@ make_ulogd_config() {
     done
 }
 
+ulogd_restart() {
+    local log="$1"
+
+    # restart when checksum does not exist
+    if [ ! -e "${ULOGD_FILE}.md5" ]; then
+        /etc/init.d/ulogd restart
+
+    else
+
+        # restart when the configuration changes
+        if md5sum -s -c "${ULOGD_FILE}.md5"; then
+
+            # restart when log is enabled and the process is not running
+            if [ "${log}" = "yes" ]; then
+                if start-stop-daemon -q -K -t -x /usr/sbin/ulogd; then
+                    :
+                else
+                    /etc/init.d/ulogd restart
+                fi
+            fi
+        else
+            /etc/init.d/ulogd restart
+        fi
+    fi
+
+    # store checksum
+    md5sum "${ULOGD_FILE}" > "${ULOGD_FILE}.md5"
+}
+
 apply_iptables() {
     if [ -f "${PERSISTENT_RULES}" ]; then
         # Append header to file
@@ -357,8 +386,9 @@ apply_isets() {
             # clear the log file when disabled
             echo > "${ULOGD_FILE}"
         fi
+
         # restart ulogd to reinit configuration
-        /etc/init.d/ulogd restart
+        ulogd_restart "${nflog}"
 
         # Create iptables rules
         for ipset_name in ${new_names}; do
