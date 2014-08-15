@@ -390,6 +390,12 @@ apply_isets() {
         # restart ulogd to reinit configuration
         ulogd_restart "${nflog}"
 
+        # reorder rules by action (log, log and block, block)
+        log_names=$(echo "${new_names}" | grep 'turris_[^_]*_l_')
+        log_and_block_names=$(echo "${new_names}" | grep 'turris_[^_]*_lb_')
+        block_names=$(echo "${new_names}" | grep 'turris_[^_]*_b_')
+        new_names="${log_names} ${log_and_block_names} ${block_names}"
+
         # Create iptables rules
         for ipset_name in ${new_names}; do
             rule_id="$(echo ${ipset_name} | cut -d_ -f2)"
