@@ -390,11 +390,13 @@ apply_isets() {
         # restart ulogd to reinit configuration
         ulogd_restart "${nflog}"
 
-        # reorder rules by action (log, log and block, block)
-        log_names=$(echo "${new_names}" | grep 'turris_[^_]*_l_')
-        log_and_block_names=$(echo "${new_names}" | grep 'turris_[^_]*_lb_')
-        block_names=$(echo "${new_names}" | grep 'turris_[^_]*_b_')
-        new_names="${log_names} ${log_and_block_names} ${block_names}"
+        nflog_rules_4=""
+        log_rules_4=""
+        drop_rules_4=""
+
+        nflog_rules_6=""
+        log_rules_6=""
+        drop_rules_6=""
 
         # Create iptables rules
         for ipset_name in ${new_names}; do
@@ -413,58 +415,42 @@ apply_isets() {
                 ipset destroy "${ipset_name}"
             fi
 
-            if [ "${ip_type}" = 4 ]; then
-                target_file="${TMP_FILE}"
-            elif [ "${ip_type}" = 6 ]; then
-                target_file="${TMP_FILE6}"
+            if [ "${type}" = "a" ]; then
+                match="dst"
+            elif [ "${type}" = "ap" ]; then
+                match="dst,dst"
             fi
+
             case "${action}" in
                 "b")
-                    if [ "${type}" = "a" ]; then
-                        if [ "${nflog}" = "yes" ]; then
-                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
-                        fi
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${target_file}"
-                    elif [ "${type}" = "ap" ]; then
-                        if [ "${nflog}" = "yes" ]; then
-                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
-                        fi
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${target_file}"
-                    fi
+                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+                    eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
                     ;;
                 "l")
-                    if [ "${type}" = "a" ]; then
-                        if [ "${nflog}" = "yes" ]; then
-                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
-                        fi
-                        echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
-                    elif [ "${type}" = "ap" ]; then
-                        if [ "${nflog}" = "yes" ]; then
-                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
-                        fi
-                        echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
-                    fi
+                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+                    eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     ;;
                 "lb")
-                    if [ "${type}" = "a" ]; then
-                        if [ "${nflog}" = "yes" ]; then
-                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
-                        fi
-                        echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst -j DROP" >> "${target_file}"
-                    elif [ "${type}" = "ap" ]; then
-                        if [ "${nflog}" = "yes" ]; then
-                            echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j NFLOG --nflog-group $((1000 + $nflog_idx))" >> "${target_file}"
-                        fi
-                        echo "-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} dst,dst -j LOG --log-prefix \"turris-${rule_id}: \" --log-level debug" >> "${target_file}"
-                        echo "-A turris -o ${WAN} -m set --match-set ${ipset_name_x} dst,dst -j DROP" >> "${target_file}"
-                    fi
+                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+                    eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                    eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
                     ;;
             esac
 
             # increase nflog_group number
             nflog_idx=$(($nflog_idx + 1))
         done
+
+        if [ "${nflog}" = "yes" ]; then
+            echo -e "${nflog_rules_4}" >> "${TMP_FILE}"
+            echo -e "${nflog_rules_6}" >> "${TMP_FILE6}"
+        fi
+
+        # iptables-restore does not like ' character
+        echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}"
+        echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}"
+        echo -e "${drop_rules_4}" >> "${TMP_FILE}"
+        echo -e "${drop_rules_6}" >> "${TMP_FILE6}"
 
         # Add the commit
         echo COMMIT >> "${TMP_FILE}"
