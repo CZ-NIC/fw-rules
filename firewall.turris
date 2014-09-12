@@ -42,22 +42,16 @@ if [ -n "${DEBUG}" ] ; then
 fi
 
 
-RULES_URL="https://api.turris.cz/firewall/turris-rules"
-SIGN_URL="${RULES_URL}.sign"
-
 IPSETS_URL="https://api.turris.cz/firewall/turris-ipsets"
 IPSETS_SIGN_URL="${IPSETS_URL}.sign"
 
 TMP_FILE="/tmp/iptables.rules"
 TMP_FILE6="/tmp/ip6tables.rules"
-PERSISTENT_RULES="/usr/share/firewall/turris-rules"
 PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets"
 ULOGD_FILE="/tmp/etc/ulogd-turris.conf"
 PCAP_DIR="/var/log/turris-pcap"
 
 DOWNLOAD_DIR="/tmp/fw-rules"
-DOWNLOAD_RULES="${DOWNLOAD_DIR}/turris-rules"
-DOWNLOAD_SIGN="${DOWNLOAD_RULES}.sign"
 DOWNLOAD_IPSETS="${DOWNLOAD_DIR}/turris-ipsets"
 DOWNLOAD_IPSETS_SIGN="${DOWNLOAD_IPSETS}.sign"
 
@@ -68,8 +62,6 @@ WAN=""
 
 TEST_SIGN_KEY="${DOWNLOAD_DIR}/turris-rules.pub"
 TEST_SIGN_KEY_URL="https://api.turris.cz/firewall-test/turris-rules.pub"
-TEST_RULES_URL="https://api.turris.cz/firewall-test/turris-rules"
-TEST_SIGN_URL="${TEST_RULES_URL}.sign"
 TEST_IPSETS_URL="https://api.turris.cz/firewall-test/turris-ipsets"
 TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
 
@@ -311,51 +303,6 @@ ulogd_restart() {
     md5sum "${ULOGD_FILE}" > "${ULOGD_FILE}.md5"
 }
 
-apply_iptables() {
-    if [ -f "${PERSISTENT_RULES}" ]; then
-        # Append header to file
-        echo ':turris - [0:0]' >> "${TMP_FILE}"
-        echo ':turris - [0:0]' >> "${TMP_FILE6}"
-        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
-        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}"
-        count=0
-        count6=0
-        while read line
-        do
-            ip=$(echo "${line}" | sed 's/.* -d \([^ ]*\) .*/\1/')
-            if [ "${ip/:}" = "${ip}" ]; then
-                # ipv4
-                eval echo "${line}" >> "${TMP_FILE}"
-                count=$((${count} + 1))
-            else
-                # ipv6
-                eval echo "${line}" >> "${TMP_FILE6}"
-                count6=$((${count6} + 1))
-            fi
-        done < "${PERSISTENT_RULES}"
-
-        # Add the commit
-        echo COMMIT >> "${TMP_FILE}"
-        echo COMMIT >> "${TMP_FILE6}"
-
-        # Apply iptables
-        iptables-restore -T filter < "${TMP_FILE}"
-        if [ $? -eq 0 ]; then
-            logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 rule(s) were loaded"
-        else
-            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded ipv4 rules"
-            exit 1
-        fi
-        ip6tables-restore -T filter < "${TMP_FILE6}"
-        if [ $? -eq 0 ]; then
-            logger -t turris-firewall-rules "(v${VERSION}) ${count6} ipv6 rule(s) were loaded"
-        else
-            logger -t turris-firewall-rules "(v${VERSION}) Failed to load downloaded ipv6 rules"
-            exit 1
-        fi
-    fi
-}
-
 apply_isets() {
     if [ -f "${PERSISTENT_IPSETS}" ]; then
         # Append header to files
@@ -484,12 +431,6 @@ if [ -n "${WAN}" ]; then
         test="false"
     fi
 
-    if test_ipset_modules ; then
-        modules="true"
-    else
-        modules="false"
-    fi
-
     # Don't any turris related rules and COMMIT
     iptables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE}"
     ip6tables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE6}"
@@ -527,31 +468,7 @@ if [ -n "${WAN}" ]; then
         apply_isets
 
     else
-        logger -t turris-firewall-rules "(v${VERSION}) Ipset modules not loaded using iptables instead"
-        # Using iptables
-
-        # Download the rule signature
-        download "${SIGN_URL}" "${TEST_SIGN_URL}" "${DOWNLOAD_SIGN}" "${DOWNLOAD_INTERVAL}"
-
-        # test whether is necessary to download the whole file
-        if [ -f "${PERSISTENT_RULES}" ]; then
-            verify_signature "${PERSISTENT_RULES}" "${DOWNLOAD_SIGN}"
-            if [ $? -eq 0 ]; then
-                # Skip when signature matches
-                :
-            else
-                # download new rules
-                download "${RULES_URL}" "${TEST_RULES_URL}" "${DOWNLOAD_RULES}"
-            fi
-        else
-            download "${RULES_URL}" "${TEST_RULES_URL}" "${DOWNLOAD_RULES}"
-        fi
-
-        # update file in the persistent memory
-        update_file "${DOWNLOAD_SIGN}" "${DOWNLOAD_RULES}" "${PERSISTENT_RULES}"
-
-        # Apply the rules
-        apply_iptables
+        logger -t turris-firewall-rules "(v${VERSION}) Ipset modules not loaded. Turris rules were not applied!"
     fi
 
     rm -f "${TMP_FILE}"
