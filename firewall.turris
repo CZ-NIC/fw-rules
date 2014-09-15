@@ -36,6 +36,8 @@
 #   option path /usr/share/firewall/turris
 #
 
+. $IPKG_INSTROOT/lib/functions.sh
+
 # Enable debug
 if [ -n "${DEBUG}" ] ; then
     set -x
@@ -66,7 +68,6 @@ TEST_IPSETS_URL="https://api.turris.cz/firewall-test/turris-ipsets"
 TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
 
 while [ -z "${WAN}" ]; do
-    . $IPKG_INSTROOT/lib/functions.sh
 
     # read wan from nikola
     config_load nikola
@@ -111,13 +112,55 @@ test_nflog_modules() {
 # Should load NFLOG
 test_nflog() {
     if test_nflog_modules ; then
+
+        config_load firewall-turris
+
         # test using uci
-        uci_val="$(uci -q get pcap-dumps.firewall.enabled)"
-        if [ $? -eq 0 -a "$uci_val" = "1" ]; then
+        config_get_bool pcap_enabled pcap enabled "0"
+        if [ "$pcap_enabled" = "1" ]; then
             return 0
         fi
     fi
     return 1
+}
+
+# Load overrides
+load_overrides() {
+    overrides_block=""
+    overrides_log=""
+    overrides_log_and_block=""
+    overrides_nothing=""
+
+    config_load firewall-turris
+
+    append_overrides() {
+        local cfg="$1"
+        local rule_id
+        local action
+        config_get rule_id "${cfg}" rule_id
+        config_get action "${cfg}" action
+        if [ "$action" == "block" ]; then
+            overrides_block="$overrides_block $rule_id"
+        elif [ "$action" == "log" ]; then
+            overrides_log="$overrides_log $rule_id"
+        elif [ "$action" == "log_and_block" ]; then
+            overrides_log_and_block="$overrides_log_and_block $rule_id"
+        elif [ "$action" == "nothing" ]; then
+            overrides_nothing="$overrides_nothing $rule_id"
+        fi
+    }
+
+    config_foreach append_overrides rule_override
+}
+
+# is in list 
+is_in_list() {
+    local item="$1"
+    local list="$2"
+    if [ "${list/$item}" == "${list}" ]; then
+        return 1
+    fi
+    return 0
 }
 
 # Return md5 of a file the file should exist
@@ -243,6 +286,7 @@ test_branch() {
 make_ulogd_config() {
     local ids="$@"
     local idx=0
+    local rule_id
 
     # Create a directory for logging
     mkdir -p "${PCAP_DIR}"
@@ -347,11 +391,11 @@ apply_isets() {
 
         # Create iptables rules
         for ipset_name in ${new_names}; do
-            rule_id="$(echo ${ipset_name} | cut -d_ -f2)"
-            action="$(echo ${ipset_name} | cut -d_ -f3)"
-            type="$(echo ${ipset_name} | cut -d_ -f4)"
-            ip_type="$(echo ${ipset_name} | cut -d_ -f5)"
-            ipset_name_x="${ipset_name}_X"
+            local rule_id="$(echo ${ipset_name} | cut -d_ -f2)"
+            local action="$(echo ${ipset_name} | cut -d_ -f3)"
+            local type="$(echo ${ipset_name} | cut -d_ -f4)"
+            local ip_type="$(echo ${ipset_name} | cut -d_ -f5)"
+            local ipset_name_x="${ipset_name}_X"
 
             if [ "${old_names/${ipset_name_x}}" = "${old_names}" ]; then
                 # set is brand new -> rename
@@ -366,6 +410,18 @@ apply_isets() {
                 match="dst"
             elif [ "${type}" = "ap" ]; then
                 match="dst,dst"
+            fi
+
+            # apply rule_overrides
+            load_overrides
+            if is_in_list "${rule_id}" "${overrides_nothing}"; then
+                action="skip"
+            elif is_in_list "${rule_id}" "${overrides_log_and_block}"; then
+                action="lb"
+            elif is_in_list "${rule_id}" "${overrides_block}"; then
+                action="b"
+            elif is_in_list "${rule_id}" "${overrides_log}"; then
+                action="l"
             fi
 
             case "${action}" in
@@ -473,4 +529,5 @@ if [ -n "${WAN}" ]; then
 
     rm -f "${TMP_FILE}"
     rm -f "${TMP_FILE6}"
+
 fi
