@@ -355,24 +355,24 @@ apply_isets() {
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
         eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}"
 
-        count="$(grep '^add [^ ]*_4' ${PERSISTENT_IPSETS} | wc -l)"
-        count6="$(grep '^add [^ ]*_6' ${PERSISTENT_IPSETS} | wc -l)"
-        skip_count=0
-        override_count=0
+        local count="$(grep '^add [^ ]*_4' ${PERSISTENT_IPSETS} | wc -l)"
+        local count6="$(grep '^add [^ ]*_6' ${PERSISTENT_IPSETS} | wc -l)"
+        local skip_count=0
+        local override_count=0
 
         # Load new ipsets
         ipset restore -f "${PERSISTENT_IPSETS}"
 
         # Create all if exist swap otherwise rename append rules
-        old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
-        new_names="$(grep create ${PERSISTENT_IPSETS} | cut -d' ' -f2 | sort)"
+        local old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
+        local new_names="$(grep create ${PERSISTENT_IPSETS} | cut -d' ' -f2 | sort)"
 
         # Should NFLOG be activated (to be applied)
         nflog_idx=0
         if test_nflog ; then
             nflog="yes"
 
-            rule_ids=$(echo "${new_names}" | cut -d_ -f2)
+            local rule_ids=$(echo "${new_names}" | cut -d_ -f2)
             make_ulogd_config "${rule_ids}"
 
         else
@@ -383,13 +383,13 @@ apply_isets() {
         # restart ulogd to reinit configuration
         ulogd_restart "${nflog}"
 
-        nflog_rules_4=""
-        log_rules_4=""
-        drop_rules_4=""
+        local nflog_rules_4=""
+        local log_rules_4=""
+        local drop_rules_4=""
 
-        nflog_rules_6=""
-        log_rules_6=""
-        drop_rules_6=""
+        local nflog_rules_6=""
+        local log_rules_6=""
+        local drop_rules_6=""
 
         # Create iptables rules
         for ipset_name in ${new_names}; do
