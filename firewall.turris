@@ -357,6 +357,8 @@ apply_isets() {
 
         count="$(grep '^add [^ ]*_4' ${PERSISTENT_IPSETS} | wc -l)"
         count6="$(grep '^add [^ ]*_6' ${PERSISTENT_IPSETS} | wc -l)"
+        skip_count=0
+        override_count=0
 
         # Load new ipsets
         ipset restore -f "${PERSISTENT_IPSETS}"
@@ -415,13 +417,17 @@ apply_isets() {
             # apply rule_overrides
             load_overrides
             if is_in_list "${rule_id}" "${overrides_nothing}"; then
-                action="skip"
+                action="n"
+                override_count=$(($override_count + 1))
             elif is_in_list "${rule_id}" "${overrides_log_and_block}"; then
                 action="lb"
+                override_count=$(($override_count + 1))
             elif is_in_list "${rule_id}" "${overrides_block}"; then
                 action="b"
+                override_count=$(($override_count + 1))
             elif is_in_list "${rule_id}" "${overrides_log}"; then
                 action="l"
+                override_count=$(($override_count + 1))
             fi
 
             case "${action}" in
@@ -438,6 +444,8 @@ apply_isets() {
                     eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
                     ;;
+                "n")
+                    skip_count=$(($skip_count + 1))
             esac
 
             # increase nflog_group number
@@ -471,7 +479,7 @@ apply_isets() {
             exit 1
         fi
 
-        logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded"
+        logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded (${override_count} rule(s) overriden, ${skip_count} rule(s) skipped)"
     fi
 }
 
