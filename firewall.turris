@@ -67,6 +67,42 @@ TEST_SIGN_KEY_URL="https://api.turris.cz/firewall-test/turris-rules.pub"
 TEST_IPSETS_URL="https://api.turris.cz/firewall-test/turris-ipsets"
 TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
 
+RULE_DESCRIPTION_FILE="/tmp/rule-description.txt"
+RULE_DESCRIPTION_AWK_FILE="/tmp/rule-description.awk"
+
+generate_rule_description_file() {
+    cat > $RULE_DESCRIPTION_AWK_FILE <<"EOF"
+BEGIN {
+    comments=""
+    comments_idx=0
+}
+/#/ {
+    can_print=1
+    tmp=$0
+    sub(/# /, "", tmp)
+    comments[comments_idx]=tmp
+    comments_idx++
+}
+/^add/ {
+    if (can_print) {
+        split($2, parsed, "_")
+        rule_id=substr(parsed[2], 0, 7)
+        print rule_id "0"
+        for (i=0; i<comments_idx; ++i) {
+            print "\t" comments[i]
+        }
+        print "\n"
+    }
+    can_print=0
+}
+!/#/ {
+    comments_idx=0
+}
+EOF
+    awk -f "$RULE_DESCRIPTION_AWK_FILE" < "$PERSISTENT_IPSETS" >> "$RULE_DESCRIPTION_FILE"
+    rm -rf "$RULE_DESCRIPTION_AWK_FILE"
+}
+
 while [ -z "${WAN}" ]; do
 
     # read wan from nikola
@@ -527,6 +563,9 @@ if [ -n "${WAN}" ]; then
 
         # update file in the persistent memory
         update_file "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_IPSETS}" "${PERSISTENT_IPSETS}"
+
+        # generate the rule description file
+        generate_rule_description_file
 
         # Apply the sets
         apply_isets
