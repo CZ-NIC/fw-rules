@@ -70,6 +70,16 @@ TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
 RULE_DESCRIPTION_FILE="/tmp/rule-description.txt"
 RULE_DESCRIPTION_AWK_FILE="/tmp/rule-description.awk"
 
+CRL_FILE_PERSISTENT="/etc/ssl/crl.pem"
+CRL_FILE_TEMPORAL="/tmp/crl.pem"
+
+# Temporal crl file should be up-to date
+if [ -f "${CRL_FILE_TEMPORAL}" ]; then
+    CRL_FILE="${CRL_FILE_TEMPORAL}"
+else
+    CRL_FILE="${CRL_FILE_PERSISTENT}"
+fi
+
 generate_rule_description_file() {
     cat > $RULE_DESCRIPTION_AWK_FILE <<"EOF"
 BEGIN {
@@ -224,7 +234,7 @@ download() {
         url="$master_url"
     fi
 
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${url}" -o "${destination}"
+    curl -fs --cacert /etc/ssl/startcom.pem --crlfile "${CRL_FILE}" "${url}" -o "${destination}"
     if [ $? -eq 0 ]; then
         return 0
     else
@@ -535,7 +545,7 @@ if [ -n "${WAN}" ]; then
 
     if test_branch ; then
         if [ ! -f "${TEST_SIGN_KEY}" ] ; then
-            curl -fs --cacert /etc/ssl/startcom.pem --crlfile /etc/ssl/crl.pem "${TEST_SIGN_KEY_URL}" -o "${TEST_SIGN_KEY}"
+            curl -fs --cacert /etc/ssl/startcom.pem --crlfile "${CRL_FILE}" "${TEST_SIGN_KEY_URL}" -o "${TEST_SIGN_KEY}"
         fi
         test="true"
     else
