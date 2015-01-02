@@ -38,11 +38,30 @@
 
 . $IPKG_INSTROOT/lib/functions.sh
 
+LOCK_FILE="/tmp/turris-firewall-rules.lock"
+
+acquire_lockfile() {
+    set -o noclobber
+    if [ -e "${LOCK_FILE}" ] && kill -0 `cat "${LOCK_FILE}"`; then
+        logger -t turris-firewall-rules -p err "An instance of turris-firewall-rules is already running!"
+        exit 1
+    fi
+    echo -n $$ > "${LOCK_FILE}"
+    set +o noclobber
+}
+
+release_lockfile() {
+    if [ -e "${LOCK_FILE}" -a  `cat "${LOCK_FILE}"` = "$$" ]; then
+        rm -rf "${LOCK_FILE}"
+    fi
+}
+
+acquire_lockfile
+
 # Enable debug
 if [ -n "${DEBUG}" ] ; then
     set -x
 fi
-
 
 IPSETS_URL="https://api.turris.cz/firewall/turris-ipsets"
 IPSETS_SIGN_URL="${IPSETS_URL}.sign"
@@ -527,11 +546,13 @@ apply_isets() {
         iptables-restore -T filter < "${TMP_FILE}"
         if [ $? -eq 1 ]; then
             logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv4 rules"
+            release_lockfile
             exit 1
         fi
         ip6tables-restore -T filter < "${TMP_FILE6}"
         if [ $? -eq 1 ]; then
             logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv6 rules"
+            release_lockfile
             exit 1
         fi
 
@@ -597,5 +618,6 @@ if [ -n "${WAN}" ]; then
 
     rm -f "${TMP_FILE}"
     rm -f "${TMP_FILE6}"
-
 fi
+
+release_lockfile
