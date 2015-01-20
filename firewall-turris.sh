@@ -199,6 +199,22 @@ test_nflog() {
     return 1
 }
 
+# Should use exensive dumping
+# might create huge dumps...
+test_nflog_extensive() {
+    if test_nflog_modules ; then
+
+        config_load firewall-turris
+
+        # test using uci
+        config_get_bool pcap_extensive pcap extensive "0"
+        if [ "$pcap_extensive" = "1" ]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Load overrides
 load_overrides() {
     overrides_block=""
@@ -454,6 +470,16 @@ apply_isets() {
             # clear the log file when disabled
             echo > "${ULOGD_FILE}"
         fi
+        if test_nflog_extensive ; then
+            nflog_extensive="yes"
+            echo ':turris-nflog - [0:0]' >> "${TMP_FILE}"
+            echo ':turris-nflog - [0:0]' >> "${TMP_FILE6}"
+            eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}"
+            eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}"
+            nflog_chain="turris-nflog"
+        else
+            nflog_chain="turris"
+        fi
 
         # restart ulogd to reinit configuration
         ulogd_restart "${nflog}"
@@ -495,8 +521,10 @@ apply_isets() {
 
             if [ "${type}" = "a" ]; then
                 match="dst"
+                match_src="src"
             elif [ "${type}" = "ap" ]; then
                 match="dst,dst"
+                match_src="src,src"
             fi
 
             # apply rule_overrides
@@ -515,17 +543,21 @@ apply_isets() {
                 override_count=$(($override_count + 1))
             fi
 
+            if [ ! "$action" == "n" ]; then
+                eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain} -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+                if [ "$nflog_extensive" == "yes" ]; then
+                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain} -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+                fi
+            fi
+
             case "${action}" in
                 "b")
-                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
                     eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
                     ;;
                 "l")
-                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
                     eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     ;;
                 "lb")
-                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
                     eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
                     ;;
