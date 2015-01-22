@@ -166,6 +166,14 @@ while [ -z "${WAN}" ]; do
     break
 done
 
+
+# Test whether sysctl variable net.netfilter.nf_conntrack_skip_filter variable is set properly
+test_skip_filter() {
+    if [ "$(sysctl -n net.netfilter.nf_conntrack_skip_filter)" == "1" ]; then
+        logger -t turris-firewall-rules -p err "(v${VERSION}) sysctl variable net.netfilter.nf_conntrack_skip_filter is set to 1. Some features of the firewall might not work properly. Please consider setting it to 0."
+    fi
+}
+
 # Are ipset modules for ipset loaded
 test_ipset_modules() {
     if [ -n "$(lsmod | grep ip_set)" ]; then
@@ -614,6 +622,8 @@ if [ -n "${WAN}" ]; then
     else
         test="false"
     fi
+
+    test_skip_filter
 
     # Don't any turris related rules and COMMIT
     iptables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE}"
