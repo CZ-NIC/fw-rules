@@ -229,6 +229,10 @@ load_overrides() {
     overrides_log=""
     overrides_log_and_block=""
     overrides_nothing=""
+    overrides_pcap_enabled_true=""
+    overrides_pcap_enabled_false=""
+    overrides_pcap_extensive_true=""
+    overrides_pcap_extensive_false=""
 
     config_load firewall-turris
 
@@ -236,7 +240,8 @@ load_overrides() {
         local cfg="$1"
         local rule_id
         local action
-        config_get rule_id "${cfg}" rule_id
+        config_get rule_id "${cfg}" rule_id "${cfg}"
+
         config_get action "${cfg}" action
         if [ "$action" == "block" ]; then
             overrides_block="$overrides_block $rule_id"
@@ -246,6 +251,19 @@ load_overrides() {
             overrides_log_and_block="$overrides_log_and_block $rule_id"
         elif [ "$action" == "nothing" ]; then
             overrides_nothing="$overrides_nothing $rule_id"
+        fi
+
+        config_get_bool pcap_enabled "${cfg}" pcap_enabled ""
+        if [ "$pcap_enabled" == "1" ]; then
+            overrides_pcap_enabled_true="$overrides_pcap_enabled_true $rule_id"
+        elif [ "$pcap_enabled" == "0" ]; then
+            overrides_pcap_enabled_false="$overrides_pcap_enabled_false $rule_id"
+        fi
+        config_get_bool pcap_extensive "${cfg}" pcap_extensive ""
+        if [ "$pcap_extensive" == "1" ]; then
+            overrides_pcap_extensive_true="$overrides_pcap_extensive_true $rule_id"
+        elif [ "$pcap_extensive" == "0" ]; then
+            overrides_pcap_extensive_false="$overrides_pcap_extensive_false $rule_id"
         fi
     }
 
@@ -480,14 +498,16 @@ apply_isets() {
         fi
         if test_nflog_extensive ; then
             nflog_extensive="yes"
-            echo ':turris-nflog - [0:0]' >> "${TMP_FILE}"
-            echo ':turris-nflog - [0:0]' >> "${TMP_FILE6}"
-            eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}"
-            eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}"
             nflog_chain="turris-nflog"
         else
             nflog_chain="turris"
         fi
+
+        # add a new chain for extensive pcap logging
+        echo ':turris-nflog - [0:0]' >> "${TMP_FILE}"
+        echo ':turris-nflog - [0:0]' >> "${TMP_FILE6}"
+        eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}"
+        eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}"
 
         # restart ulogd to reinit configuration
         ulogd_restart "${nflog}"
@@ -499,6 +519,9 @@ apply_isets() {
         local nflog_rules_6=""
         local log_rules_6=""
         local drop_rules_6=""
+
+        # load the overrides
+        load_overrides
 
         # Create iptables rules
         for ipset_name in ${new_names}; do
@@ -536,7 +559,6 @@ apply_isets() {
             fi
 
             # apply rule_overrides
-            load_overrides
             if is_in_list "${rule_id}" "${overrides_nothing}"; then
                 action="n"
                 override_count=$(($override_count + 1))
@@ -551,10 +573,30 @@ apply_isets() {
                 override_count=$(($override_count + 1))
             fi
 
-            if [ ! "$action" == "n" ]; then
-                eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain} -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
-                if [ "$nflog_extensive" == "yes" ]; then
-                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain} -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+            # apply override nflog rules
+            if is_in_list "${rule_id}" "${overrides_pcap_extensive_true}"; then
+                local nflog_extensive_local="yes"
+                local nflog_chain_local="turris-nflog"
+            elif is_in_list "${rule_id}" "${overrides_pcap_extensive_false}"; then
+                local nflog_extensive_local="no"
+                local nflog_chain_local="turris"
+            else
+                local nflog_extensive_local=$nflog_extensive
+                local nflog_chain_local=$nflog_chain
+            fi
+
+            if is_in_list "${rule_id}" "${overrides_pcap_enabled_true}"; then
+                local nflog_local="yes"
+            elif is_in_list "${rule_id}" "${overrides_pcap_enabled_false}"; then
+                local nflog_local="no"
+            else
+                local nflog_local=$nflog
+            fi
+
+            if [ ! "$action" == "n" -a "$nflog_local" == "yes" ]; then
+                eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+                if [ "$nflog_extensive_local" == "yes" ]; then
+                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
                 fi
             fi
 
@@ -577,10 +619,8 @@ apply_isets() {
             nflog_idx=$(($nflog_idx + 1))
         done
 
-        if [ "${nflog}" = "yes" ]; then
-            echo -e "${nflog_rules_4}" >> "${TMP_FILE}"
-            echo -e "${nflog_rules_6}" >> "${TMP_FILE6}"
-        fi
+        echo -e "${nflog_rules_4}" >> "${TMP_FILE}"
+        echo -e "${nflog_rules_6}" >> "${TMP_FILE6}"
 
         # iptables-restore does not like ' character
         echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}"
