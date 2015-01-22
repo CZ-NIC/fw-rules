@@ -88,7 +88,7 @@ DOWNLOAD_IPSETS_SIGN="${DOWNLOAD_IPSETS}.sign"
 
 SIGN_KEY="/etc/ssl/turris-rules.pub"
 DOWNLOAD_INTERVAL=$((4*60))
-VERSION=$(opkg list-installed turris-firewall-rules | sed 's/[^0-9]*//')
+VERSION=0
 WAN=""
 
 TEST_SIGN_KEY="${DOWNLOAD_DIR}/turris-rules.pub"
