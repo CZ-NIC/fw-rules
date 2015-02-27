@@ -509,6 +509,12 @@ apply_isets() {
         eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}"
         eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}"
 
+        # add a new chain for storing dropped packets which match issued with a propper ID
+        echo ':turris-reject - [0:0]' >> "${TMP_FILE}"
+        echo ':turris-reject - [0:0]' >> "${TMP_FILE6}"
+        eval echo "-I reject -j turris-reject" >> "${TMP_FILE}"
+        eval echo "-I reject -j turris-reject" >> "${TMP_FILE6}"
+
         # restart ulogd to reinit configuration
         ulogd_restart "${nflog}"
 
@@ -603,13 +609,19 @@ apply_isets() {
             case "${action}" in
                 "b")
                     eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
+                    eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
                     ;;
                 "l")
                     eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                    eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                    eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     ;;
                 "lb")
                     eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                    eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                    eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
+                    eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
                     ;;
                 "n")
                     skip_count=$(($skip_count + 1))
@@ -625,6 +637,8 @@ apply_isets() {
         # iptables-restore does not like ' character
         echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}"
         echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}"
+        echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}"
+        echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}"
         echo -e "${drop_rules_4}" >> "${TMP_FILE}"
         echo -e "${drop_rules_6}" >> "${TMP_FILE6}"
 
