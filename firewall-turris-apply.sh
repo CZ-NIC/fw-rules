@@ -445,11 +445,13 @@ apply_isets() {
                     eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                    eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-reject -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
                     ;;
                 "lb")
                     eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                     eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                    eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-reject -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
                     eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
                     eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
                     ;;
@@ -468,7 +470,11 @@ apply_isets() {
         echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}"
         echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}"
         echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}"
+        echo -e "${return_rules_4}" | tr \' \" >> "${TMP_FILE}"
+		echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}"
         echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}"
+        echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}"
+		echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}"
         echo -e "${drop_rules_4}" >> "${TMP_FILE}"
         echo -e "${drop_rules_6}" >> "${TMP_FILE6}"
 
