@@ -492,6 +492,8 @@ apply_isets() {
 
         md5=$(file_md5 "${PERSISTENT_IPSETS}")
         logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded ($md5), ${override_count} rule(s) overriden, ${skip_count} rule(s) skipped"
+    else
+        logger -t turris-firewall-rules "(v${VERSION}) Turris rules haven't been downloaded from the server yet."
     fi
 }
 
