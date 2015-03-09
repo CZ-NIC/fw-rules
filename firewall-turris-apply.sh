@@ -1,6 +1,6 @@
 #!/bin/busybox sh
 
-# Copyright (c) 2013-2014, CZ.NIC, z.s.p.o. (http://www.nic.cz/)
+# Copyright (c) 2013-2015, CZ.NIC, z.s.p.o. (http://www.nic.cz/)
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -27,18 +27,22 @@
 
 #
 # This file is interpreted as shell script.
-# It contains firewall rules issued by CZ.NIC s.z.p.o.
+# It applies firewall rules issued by CZ.NIC s.z.p.o.
 # as a part of Turris project (see https://www.turris.cz/)
-# 
+#
 # To enable/disable the rules please edit /etc/config/firewall
 #
 # config include
 #   option path /usr/share/firewall/turris
 #
+# It is periodically executed using cron (see /etc/cron.d/fw-rules - within firewall reload)
+#
+# Related UCI config /etc/config/firewall-turris
+#
 
 . $IPKG_INSTROOT/lib/functions.sh
 
-LOCK_FILE="/tmp/turris-firewall-rules.lock"
+LOCK_FILE="/tmp/turris-firewall-rules-apply.lock"
 
 acquire_lockfile() {
     set -o noclobber
@@ -73,74 +77,14 @@ if [ -n "${DEBUG}" ] ; then
     set -x
 fi
 
-IPSETS_URL="https://api.turris.cz/firewall/turris-ipsets"
-IPSETS_SIGN_URL="${IPSETS_URL}.sign"
-
 TMP_FILE="/tmp/iptables.rules"
 TMP_FILE6="/tmp/ip6tables.rules"
 PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets"
 ULOGD_FILE="/tmp/etc/ulogd-turris.conf"
 PCAP_DIR="/var/log/turris-pcap"
 
-DOWNLOAD_DIR="/tmp/fw-rules"
-DOWNLOAD_IPSETS="${DOWNLOAD_DIR}/turris-ipsets"
-DOWNLOAD_IPSETS_SIGN="${DOWNLOAD_IPSETS}.sign"
-
-SIGN_KEY="/etc/ssl/turris-rules.pub"
-DOWNLOAD_INTERVAL=$((4*60))
 VERSION=0
 WAN=""
-
-TEST_SIGN_KEY="${DOWNLOAD_DIR}/turris-rules.pub"
-TEST_SIGN_KEY_URL="https://api.turris.cz/firewall-test/turris-rules.pub"
-TEST_IPSETS_URL="https://api.turris.cz/firewall-test/turris-ipsets"
-TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
-
-RULE_DESCRIPTION_FILE="/tmp/rule-description.txt"
-RULE_DESCRIPTION_AWK_FILE="/tmp/rule-description.awk"
-
-CRL_FILE_PERSISTENT="/etc/ssl/crl.pem"
-CRL_FILE_TEMPORAL="/tmp/crl.pem"
-
-# Temporal crl file should be up-to date
-if [ -f "${CRL_FILE_TEMPORAL}" ]; then
-    CRL_FILE="${CRL_FILE_TEMPORAL}"
-else
-    CRL_FILE="${CRL_FILE_PERSISTENT}"
-fi
-
-generate_rule_description_file() {
-    cat > $RULE_DESCRIPTION_AWK_FILE <<"EOF"
-BEGIN {
-    comments=""
-    comments_idx=0
-}
-/#/ {
-    can_print=1
-    tmp=$0
-    sub(/# /, "", tmp)
-    comments[comments_idx]=tmp
-    comments_idx++
-}
-/^add/ {
-    if (can_print) {
-        split($2, parsed, "_")
-        rule_id=substr(parsed[2], 0, 7)
-        print rule_id "0"
-        for (i=0; i<comments_idx; ++i) {
-            print "\t" comments[i]
-        }
-        print "\n"
-    }
-    can_print=0
-}
-!/#/ {
-    comments_idx=0
-}
-EOF
-    awk -f "$RULE_DESCRIPTION_AWK_FILE" < "$PERSISTENT_IPSETS" > "$RULE_DESCRIPTION_FILE"
-    rm -rf "$RULE_DESCRIPTION_AWK_FILE"
-}
 
 while [ -z "${WAN}" ]; do
 
@@ -166,6 +110,11 @@ while [ -z "${WAN}" ]; do
     break
 done
 
+# Return md5 of a file the file should exist
+file_md5() {
+    local file="$1"
+    echo $(md5sum "${file}" | sed 's/ .*//')
+}
 
 # Test whether sysctl variable net.netfilter.nf_conntrack_skip_filter variable is set properly
 test_skip_filter() {
@@ -278,125 +227,6 @@ is_in_list() {
         return 1
     fi
     return 0
-}
-
-# Return md5 of a file the file should exist
-file_md5() {
-    local file="$1"
-    echo $(md5sum "${file}" | sed 's/ .*//')
-}
-
-
-download() {
-    local master_url="$1"
-    local test_url="$2"
-    local destination="$3"
-    local interval="$4"
-
-    if [ -n "$interval" ]; then
-        if ! download_needed "${destination}" "${interval}" ; then
-            return 0
-        fi
-    fi
-
-    if [ "${test}" == "true" ]; then
-        url="$test_url"
-    else
-        url="$master_url"
-    fi
-
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile "${CRL_FILE}" "${url}" -o "${destination}"
-    if [ $? -eq 0 ]; then
-        return 0
-    else
-        logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to download ${url}"
-        return 1
-    fi
-}
-
-# Check whether the selected file is older then X seconds
-download_needed() {
-    local file="$1"
-    local seconds="$2"
-    local current=`date +%s`
-    if [ -f "${file}" ]; then
-        local file_age=`date -r "${file}" +%s`
-        if [ "${current}" -lt "$((file_age + seconds))" ] ; then
-            return 1
-        else
-            return 0
-        fi
-        return 1
-    else
-        return 0
-    fi
-}
-
-# Verifies signature
-verify_signature() {
-
-    local file="$1"
-    local signature="$2"
-
-    if [ "${test}" == "true" ]; then
-        key="${TEST_SIGN_KEY}"
-    else
-        key="${SIGN_KEY}"
-    fi
-
-    openssl dgst -sha256 -verify "${key}" -signature "${signature}" "${file}" > /dev/null 2>&1
-    return $?
-}
-
-# Update the persistent file
-update_file() {
-
-    local signature="$1"
-    local downloaded="$2"
-    local persistent="$3"
-    local file_name=$(basename "${persistent}")
-
-    # test the signature
-    if [ -f "${signature}" -a -f "${downloaded}" ]; then
-        verify_signature "${downloaded}" "${signature}"
-        if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules -p err "(v${VERSION}) Incorrect signature for downloaded ${file_name}"
-            return 1
-        fi
-    else
-        return 1
-    fi
-
-    # Update the files
-    if [ -f "${persistent}" ]; then
-        cmp -s "${downloaded}" "${persistent}"
-        if [ $? -eq 1 ]; then
-            local new_md5=$(file_md5 "${downloaded}")
-            local old_md5=$(file_md5 "${persistent}")
-            logger -t turris-firewall-rules "(v${VERSION}) Switching ${file_name} ${old_md5} -> ${new_md5}"
-            cp "${downloaded}" "${persistent}"
-        fi
-    else
-        local new_md5=$(file_md5 "${downloaded}")
-        logger -t turris-firewall-rules "(v${VERSION}) Setting ${file_name} ${new_md5}"
-        cp "${downloaded}" "${persistent}"
-    fi
-}
-
-# are we in the test branch?
-test_branch() {
-
-    if x=$(command -v getbranch) ; then
-        branch=$(getbranch)
-    else
-        return 1
-    fi
-
-    if [ `getbranch` == "test" ] ; then
-        return 0
-    fi
-
-    return 1
 }
 
 # create config for ulogd
@@ -668,52 +498,14 @@ apply_isets() {
 if [ -n "${WAN}" ]; then
     CHAIN="turris"
 
-    if test_branch ; then
-        if [ ! -f "${TEST_SIGN_KEY}" ] ; then
-            curl -fs --cacert /etc/ssl/startcom.pem --crlfile "${CRL_FILE}" "${TEST_SIGN_KEY_URL}" -o "${TEST_SIGN_KEY}"
-        fi
-        test="true"
-    else
-        test="false"
-    fi
-
     test_skip_filter
 
     # Don't any turris related rules and COMMIT
     iptables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE}"
     ip6tables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE6}"
 
-    # Create directory for the rules
-    mkdir -p "${DOWNLOAD_DIR}"
-
-    # Try to update CRL
-    get-api-crl 1>/dev/null 2>&1
 
     if test_ipset_modules ; then
-        # Using ipset
-
-        # Download the ipsets signature
-        download "${IPSETS_SIGN_URL}" "${TEST_IPSETS_SIGN_URL}" "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_INTERVAL}"
-
-        # test whether is necessary to download the whole file
-        if [ -f "${PERSISTENT_IPSETS}" ]; then
-            verify_signature "${PERSISTENT_IPSETS}" "${DOWNLOAD_IPSETS_SIGN}"
-            if [ $? -eq 0 ]; then
-                # Skip when signature matches
-                :
-            else
-                # download new rules
-                download "${IPSETS_URL}" "${TEST_IPSETS_URL}" "${DOWNLOAD_IPSETS}"
-            fi
-        else
-            download "${IPSETS_URL}" "${TEST_IPSETS_URL}" "${DOWNLOAD_IPSETS}"
-        fi
-
-        # update file in the persistent memory
-        update_file "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_IPSETS}" "${PERSISTENT_IPSETS}"
-
-        # generate the rule description file
-        generate_rule_description_file
 
         # Apply the sets
         apply_isets

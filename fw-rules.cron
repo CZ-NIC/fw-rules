@@ -1,2 +1,3 @@
 MAILTO=""
-0 * * * * root /usr/share/firewall/turris
+0 * * * * root /usr/share/firewall/turris-download
+5 * * * * root /usr/share/firewall/turris
