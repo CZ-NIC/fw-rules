@@ -471,10 +471,10 @@ apply_isets() {
         echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}"
         echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}"
         echo -e "${return_rules_4}" | tr \' \" >> "${TMP_FILE}"
-		echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}"
+        echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}"
         echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}"
         echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}"
-		echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}"
+        echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}"
         echo -e "${drop_rules_4}" >> "${TMP_FILE}"
         echo -e "${drop_rules_6}" >> "${TMP_FILE6}"
 
@@ -499,6 +499,30 @@ apply_isets() {
         md5=$(file_md5 "${PERSISTENT_IPSETS}")
         logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded ($md5), ${override_count} rule(s) overriden, ${skip_count} rule(s) skipped"
     else
+
+        echo ":turris-reject - [0:0]" >> "${TMP_FILE}"
+        echo ":turris-reject - [0:0]" >> "${TMP_FILE6}"
+        echo "-I reject -j turris-reject" >> "${TMP_FILE}"
+        echo "-I reject -j turris-reject" >> "${TMP_FILE6}"
+        echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}"
+        echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}"
+        echo COMMIT >> "${TMP_FILE}"
+        echo COMMIT >> "${TMP_FILE6}"
+
+        # Apply iptables
+        iptables-restore -T filter < "${TMP_FILE}"
+        if [ $? -eq 1 ]; then
+            logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv4 rules"
+            release_lockfile
+            exit 1
+        fi
+        ip6tables-restore -T filter < "${TMP_FILE6}"
+        if [ $? -eq 1 ]; then
+            logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv6 rules"
+            release_lockfile
+            exit 1
+        fi
+
         logger -t turris-firewall-rules "(v${VERSION}) Turris rules haven't been downloaded from the server yet."
     fi
 }
