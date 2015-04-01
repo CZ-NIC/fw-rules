@@ -1,4 +1,6 @@
-Firewall rules
-==============
+Turris Firewall Rules
+=====================
 
-Official firewall rules issued for turris routers.
+These scripts are used for downloading and applying firewall rules into Openwrt firewall environment.
+
+They are used as a part of the Turris project (see http://www.turris.cz).
