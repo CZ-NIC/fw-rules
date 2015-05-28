@@ -70,10 +70,22 @@ release_lockfile() {
     fi
 }
 
+get_wan() {
+    IFACES="$1"
+    IGNORE="$2"
+    for iface in $IFACES ; do
+        if echo "$IGNORE" | grep -qwF "$iface" ; then
+            continue;
+        fi
+        echo "$iface"
+        return
+    done
+}
+
 acquire_lockfile
 
 # Enable debug
-if [ -n "${DEBUG}" ] ; then
+if [ -n "${DEBUG}" ]; then
     set -x
 fi
 
@@ -93,21 +105,30 @@ while [ -z "${WAN}" ]; do
     config_get WAN main wan_ifname
     [ -n "${WAN}" ] && break
 
-    # read wan from network
-    config_load network
-    config_get WAN wan ifname
-    [ -n "${WAN}" ] && break
+    # autodetect using default routes (taken from ucollect init script)
 
-    # read wan from ucollect
-    set_WAN() {
-        local cfg="$1"
-        config_get WAN "${cfg}" ifname
-    }
-    config_load ucollect
-    config_foreach set_WAN interface
-    [ -n "${WAN}" ] && break
+    # Look into the routing tables to guess WAN interfaces
+    V4=$(route -n | sed -ne 's/ *$//;/^0\.0\.0\.0  *[0-9.][0-9.]*  *0\.0\.0\.0/s/.* //p')
+    V6=$(route -n -A inet6 | sed -ne 's/ *$//;/^::\/0  /s/.* //p')
+    # Unify them and remove duplicates
+    ALL=$(echo "$V4" "$V6" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
+    IGNORE=$(uci -X show network | sed -ne 's/^network\.\([^.]*\)=interface$/\1/p' | while read iface ; do
+        proto=$(uci get -q network.$iface.proto)
+        name=$(echo "$proto-$iface" | head -c 15)
+        # TODO: What about L2TP? #3093
+        if [ "$proto" = "6in4" -o "$proto" = "6to4" -o "$proto" = "6rd" -o "$proto" = "dslite" ] ; then
+            # These are tunnels. We can look into them (and do) and they'll travel through the
+            # WAN interface, so we don't need these. Ignore them.
+            echo "$name"
+        fi
+    done)
+    WAN=$(get_wan "$ALL" "$IGNORE")
 
-    break
+    if [ -z "${WAN}" ]; then
+        logger -t turris-firewall-rules -p err "(v${VERSION}) Unable to determine the WAN interface. Exiting..."
+        release_lockfile
+        exit 1
+    fi
 done
 
 # Return md5 of a file the file should exist
