@@ -139,7 +139,7 @@ file_md5() {
 
 # Test whether sysctl variable net.netfilter.nf_conntrack_skip_filter variable is set properly
 test_skip_filter() {
-    if [ "$(sysctl -n net.netfilter.nf_conntrack_skip_filter)" == "1" ]; then
+    if [ "$(sysctl -e -n net.netfilter.nf_conntrack_skip_filter)" == "1" ]; then
         logger -t turris-firewall-rules -p err "(v${VERSION}) sysctl variable net.netfilter.nf_conntrack_skip_filter is set to 1. Some features of the firewall might not work properly. Please consider setting it to 0."
     fi
 }
