@@ -315,234 +315,243 @@ ulogd_restart() {
     md5sum "${ULOGD_FILE}" > "${ULOGD_FILE}.md5"
 }
 
+load_ipsets_to_iptables() {
+    # Append header to files
+    echo ':turris - [0:0]' > "${TMP_FILE}.part"
+    echo ':turris - [0:0]' > "${TMP_FILE6}.part"
+    eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}.part"
+    eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}.part"
+
+    local count="$(grep '^add [^ ]*_4' ${PERSISTENT_IPSETS} | wc -l)"
+    local count6="$(grep '^add [^ ]*_6' ${PERSISTENT_IPSETS} | wc -l)"
+    local skip_count=0
+    local override_count=0
+
+    # Load new ipsets
+    ipset restore -f "${PERSISTENT_IPSETS}"
+
+    # Create all if exist swap otherwise rename append rules
+    local old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
+    local new_names="$(grep create ${PERSISTENT_IPSETS} | cut -d' ' -f2 | sort)"
+
+    # Should NFLOG be activated (to be applied)
+    nflog_idx=0
+    if test_nflog ; then
+        nflog="yes"
+
+        local rule_ids=$(echo "${new_names}" | cut -d_ -f2)
+        make_ulogd_config "${rule_ids}"
+
+    else
+        # clear the log file when disabled
+        echo > "${ULOGD_FILE}"
+    fi
+    if test_nflog_extensive ; then
+        nflog_extensive="yes"
+        nflog_chain="turris-nflog"
+    else
+        nflog_chain="turris"
+    fi
+
+    # add a new chain for extensive pcap logging
+    echo ':turris-nflog - [0:0]' >> "${TMP_FILE}.part"
+    echo ':turris-nflog - [0:0]' >> "${TMP_FILE6}.part"
+    eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}.part"
+    eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}.part"
+
+    # add a new chain for storing dropped packets which match issued with a propper ID
+    echo ':turris-reject - [0:0]' >> "${TMP_FILE}.part"
+    echo ':turris-reject - [0:0]' >> "${TMP_FILE6}.part"
+    eval echo "-I reject -j turris-reject" >> "${TMP_FILE}.part"
+    eval echo "-I reject -j turris-reject" >> "${TMP_FILE6}.part"
+
+    # restart ulogd to reinit configuration
+    ulogd_restart "${nflog}"
+
+    local nflog_rules_4=""
+    local log_rules_4=""
+    local drop_rules_4=""
+
+    local nflog_rules_6=""
+    local log_rules_6=""
+    local drop_rules_6=""
+
+    # load the overrides
+    load_overrides
+
+    # Create iptables rules
+    for ipset_name in ${new_names}; do
+        local rule_id="$(echo ${ipset_name} | cut -d_ -f2)"
+        local action="$(echo ${ipset_name} | cut -d_ -f3)"
+        local type="$(echo ${ipset_name} | cut -d_ -f4)"
+        local ip_type="$(echo ${ipset_name} | cut -d_ -f5)"
+        local ipset_name_x="${ipset_name}_X"
+
+        if [ "${old_names/${ipset_name_x}}" = "${old_names}" ]; then
+            # set is brand new -> rename
+            ipset rename "${ipset_name}" "${ipset_name_x}"
+        else
+            # set with is active -> swap and delete
+            if ipset swap "${ipset_name}" "${ipset_name_x}"; then
+                ipset destroy "${ipset_name}"
+            else
+                # When swap fails (This could happen when ipsets have a different type)
+                # destroy the original list and rename the new one
+                #
+                # atomicity is lost, but this should be a rare situation
+                logger -t turris-firewall-rules -p warn "(v${VERSION}) Need to flush turris iptable chain (Atomicity is lost)"
+                iptables -F turris  # can't destroy ipset which is used so we need to detele the iptable rules first
+                ipset destroy "${ipset_name_x}"
+                ipset rename "${ipset_name}" "${ipset_name_x}"
+            fi
+        fi
+
+        if [ "${type}" = "a" ]; then
+            match="dst"
+            match_src="src"
+        elif [ "${type}" = "ap" ]; then
+            match="dst,dst"
+            match_src="src,src"
+        fi
+
+        # apply rule_overrides
+        if is_in_list "${rule_id}" "${overrides_nothing}"; then
+            action="n"
+            override_count=$(($override_count + 1))
+        elif is_in_list "${rule_id}" "${overrides_log_and_block}"; then
+            action="lb"
+            override_count=$(($override_count + 1))
+        elif is_in_list "${rule_id}" "${overrides_block}"; then
+            action="b"
+            override_count=$(($override_count + 1))
+        elif is_in_list "${rule_id}" "${overrides_log}"; then
+            action="l"
+            override_count=$(($override_count + 1))
+        fi
+
+        # apply override nflog rules
+        if is_in_list "${rule_id}" "${overrides_pcap_extensive_true}"; then
+            local nflog_extensive_local="yes"
+            local nflog_chain_local="turris-nflog"
+        elif is_in_list "${rule_id}" "${overrides_pcap_extensive_false}"; then
+            local nflog_extensive_local="no"
+            local nflog_chain_local="turris"
+        else
+            local nflog_extensive_local=$nflog_extensive
+            local nflog_chain_local=$nflog_chain
+        fi
+
+        if is_in_list "${rule_id}" "${overrides_pcap_enabled_true}"; then
+            local nflog_local="yes"
+        elif is_in_list "${rule_id}" "${overrides_pcap_enabled_false}"; then
+            local nflog_local="no"
+        else
+            local nflog_local=$nflog
+        fi
+
+        if [ ! "$action" == "n" -a "$nflog_local" == "yes" ]; then
+            eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+            if [ "$nflog_extensive_local" == "yes" ]; then
+                eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+            fi
+        fi
+
+        case "${action}" in
+            "b")
+                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
+                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
+                ;;
+            "l")
+                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-reject -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
+                ;;
+            "lb")
+                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-reject -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
+                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
+                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
+                ;;
+            "n")
+                skip_count=$(($skip_count + 1))
+        esac
+
+        # increase nflog_group number
+        nflog_idx=$(($nflog_idx + 1))
+    done
+
+    echo -e "${nflog_rules_4}" >> "${TMP_FILE}.part"
+    echo -e "${nflog_rules_6}" >> "${TMP_FILE6}.part"
+
+    # iptables-restore does not like ' character
+    echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
+    echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
+    echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
+    echo -e "${return_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
+    echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
+    echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
+    echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
+    echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
+    echo -e "${drop_rules_4}" >> "${TMP_FILE}.part"
+    echo -e "${drop_rules_6}" >> "${TMP_FILE6}.part"
+
+    # Add the commit
+    echo COMMIT >> "${TMP_FILE}.part"
+    echo COMMIT >> "${TMP_FILE6}.part"
+}
+
+load_empty_ipsets_to_iptables() {
+    echo ":turris-reject - [0:0]" > "${TMP_FILE}.part"
+    echo ":turris-reject - [0:0]" > "${TMP_FILE6}.part"
+    echo "-I reject -j turris-reject" >> "${TMP_FILE}.part"
+    echo "-I reject -j turris-reject" >> "${TMP_FILE6}.part"
+    echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
+    echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
+    echo COMMIT >> "${TMP_FILE}.part"
+    echo COMMIT >> "${TMP_FILE6}.part"
+}
+
+store_iptables() {
+    # Don't any turris related rules and COMMIT
+    iptables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE}"
+    ip6tables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE6}"
+}
+
+restore_iptables() {
+    cat "${TMP_FILE}.part" >> "${TMP_FILE}"
+    cat "${TMP_FILE6}.part" >> "${TMP_FILE6}"
+
+    iptables-restore -T filter < "${TMP_FILE}"
+    if [ $? -eq 1 ]; then
+        logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv4 rules"
+        release_lockfile
+        exit 1
+    fi
+    ip6tables-restore -T filter < "${TMP_FILE6}"
+    if [ $? -eq 1 ]; then
+        logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv6 rules"
+        release_lockfile
+        exit 1
+    fi
+}
+
 apply_isets() {
     if [ -f "${PERSISTENT_IPSETS}" ]; then
-        # Append header to files
-        echo ':turris - [0:0]' >> "${TMP_FILE}"
-        echo ':turris - [0:0]' >> "${TMP_FILE6}"
-        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}"
-        eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}"
 
-        local count="$(grep '^add [^ ]*_4' ${PERSISTENT_IPSETS} | wc -l)"
-        local count6="$(grep '^add [^ ]*_6' ${PERSISTENT_IPSETS} | wc -l)"
-        local skip_count=0
-        local override_count=0
-
-        # Load new ipsets
-        ipset restore -f "${PERSISTENT_IPSETS}"
-
-        # Create all if exist swap otherwise rename append rules
-        local old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
-        local new_names="$(grep create ${PERSISTENT_IPSETS} | cut -d' ' -f2 | sort)"
-
-        # Should NFLOG be activated (to be applied)
-        nflog_idx=0
-        if test_nflog ; then
-            nflog="yes"
-
-            local rule_ids=$(echo "${new_names}" | cut -d_ -f2)
-            make_ulogd_config "${rule_ids}"
-
-        else
-            # clear the log file when disabled
-            echo > "${ULOGD_FILE}"
-        fi
-        if test_nflog_extensive ; then
-            nflog_extensive="yes"
-            nflog_chain="turris-nflog"
-        else
-            nflog_chain="turris"
-        fi
-
-        # add a new chain for extensive pcap logging
-        echo ':turris-nflog - [0:0]' >> "${TMP_FILE}"
-        echo ':turris-nflog - [0:0]' >> "${TMP_FILE6}"
-        eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}"
-        eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}"
-
-        # add a new chain for storing dropped packets which match issued with a propper ID
-        echo ':turris-reject - [0:0]' >> "${TMP_FILE}"
-        echo ':turris-reject - [0:0]' >> "${TMP_FILE6}"
-        eval echo "-I reject -j turris-reject" >> "${TMP_FILE}"
-        eval echo "-I reject -j turris-reject" >> "${TMP_FILE6}"
-
-        # restart ulogd to reinit configuration
-        ulogd_restart "${nflog}"
-
-        local nflog_rules_4=""
-        local log_rules_4=""
-        local drop_rules_4=""
-
-        local nflog_rules_6=""
-        local log_rules_6=""
-        local drop_rules_6=""
-
-        # load the overrides
-        load_overrides
-
-        # Create iptables rules
-        for ipset_name in ${new_names}; do
-            local rule_id="$(echo ${ipset_name} | cut -d_ -f2)"
-            local action="$(echo ${ipset_name} | cut -d_ -f3)"
-            local type="$(echo ${ipset_name} | cut -d_ -f4)"
-            local ip_type="$(echo ${ipset_name} | cut -d_ -f5)"
-            local ipset_name_x="${ipset_name}_X"
-
-            if [ "${old_names/${ipset_name_x}}" = "${old_names}" ]; then
-                # set is brand new -> rename
-                ipset rename "${ipset_name}" "${ipset_name_x}"
-            else
-                # set with is active -> swap and delete
-                if ipset swap "${ipset_name}" "${ipset_name_x}"; then
-                    ipset destroy "${ipset_name}"
-                else
-                    # When swap fails (This could happen when ipsets have a different type)
-                    # destroy the original list and rename the new one
-                    #
-                    # atomicity is lost, but this should be a rare situation
-                    logger -t turris-firewall-rules -p warn "(v${VERSION}) Need to flush turris iptable chain (Atomicity is lost)"
-                    iptables -F turris  # can't destroy ipset which is used so we need to detele the iptable rules first
-                    ipset destroy "${ipset_name_x}"
-                    ipset rename "${ipset_name}" "${ipset_name_x}"
-                fi
-            fi
-
-            if [ "${type}" = "a" ]; then
-                match="dst"
-                match_src="src"
-            elif [ "${type}" = "ap" ]; then
-                match="dst,dst"
-                match_src="src,src"
-            fi
-
-            # apply rule_overrides
-            if is_in_list "${rule_id}" "${overrides_nothing}"; then
-                action="n"
-                override_count=$(($override_count + 1))
-            elif is_in_list "${rule_id}" "${overrides_log_and_block}"; then
-                action="lb"
-                override_count=$(($override_count + 1))
-            elif is_in_list "${rule_id}" "${overrides_block}"; then
-                action="b"
-                override_count=$(($override_count + 1))
-            elif is_in_list "${rule_id}" "${overrides_log}"; then
-                action="l"
-                override_count=$(($override_count + 1))
-            fi
-
-            # apply override nflog rules
-            if is_in_list "${rule_id}" "${overrides_pcap_extensive_true}"; then
-                local nflog_extensive_local="yes"
-                local nflog_chain_local="turris-nflog"
-            elif is_in_list "${rule_id}" "${overrides_pcap_extensive_false}"; then
-                local nflog_extensive_local="no"
-                local nflog_chain_local="turris"
-            else
-                local nflog_extensive_local=$nflog_extensive
-                local nflog_chain_local=$nflog_chain
-            fi
-
-            if is_in_list "${rule_id}" "${overrides_pcap_enabled_true}"; then
-                local nflog_local="yes"
-            elif is_in_list "${rule_id}" "${overrides_pcap_enabled_false}"; then
-                local nflog_local="no"
-            else
-                local nflog_local=$nflog
-            fi
-
-            if [ ! "$action" == "n" -a "$nflog_local" == "yes" ]; then
-                eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
-                if [ "$nflog_extensive_local" == "yes" ]; then
-                    eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
-                fi
-            fi
-
-            case "${action}" in
-                "b")
-                    eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
-                    eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
-                    ;;
-                "l")
-                    eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                    eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                    eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                    eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-reject -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
-                    ;;
-                "lb")
-                    eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                    eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                    eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                    eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-reject -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
-                    eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
-                    eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
-                    ;;
-                "n")
-                    skip_count=$(($skip_count + 1))
-            esac
-
-            # increase nflog_group number
-            nflog_idx=$(($nflog_idx + 1))
-        done
-
-        echo -e "${nflog_rules_4}" >> "${TMP_FILE}"
-        echo -e "${nflog_rules_6}" >> "${TMP_FILE6}"
-
-        # iptables-restore does not like ' character
-        echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}"
-        echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}"
-        echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}"
-        echo -e "${return_rules_4}" | tr \' \" >> "${TMP_FILE}"
-        echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}"
-        echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}"
-        echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}"
-        echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}"
-        echo -e "${drop_rules_4}" >> "${TMP_FILE}"
-        echo -e "${drop_rules_6}" >> "${TMP_FILE6}"
-
-        # Add the commit
-        echo COMMIT >> "${TMP_FILE}"
-        echo COMMIT >> "${TMP_FILE6}"
-
-        # Apply iptables
-        iptables-restore -T filter < "${TMP_FILE}"
-        if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv4 rules"
-            release_lockfile
-            exit 1
-        fi
-        ip6tables-restore -T filter < "${TMP_FILE6}"
-        if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv6 rules"
-            release_lockfile
-            exit 1
-        fi
+        load_ipsets_to_iptables
+        store_iptables
+        restore_iptables
 
         md5=$(file_md5 "${PERSISTENT_IPSETS}")
         logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded ($md5), ${override_count} rule(s) overriden, ${skip_count} rule(s) skipped"
     else
 
-        echo ":turris-reject - [0:0]" >> "${TMP_FILE}"
-        echo ":turris-reject - [0:0]" >> "${TMP_FILE6}"
-        echo "-I reject -j turris-reject" >> "${TMP_FILE}"
-        echo "-I reject -j turris-reject" >> "${TMP_FILE6}"
-        echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}"
-        echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}"
-        echo COMMIT >> "${TMP_FILE}"
-        echo COMMIT >> "${TMP_FILE6}"
-
-        # Apply iptables
-        iptables-restore -T filter < "${TMP_FILE}"
-        if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv4 rules"
-            release_lockfile
-            exit 1
-        fi
-        ip6tables-restore -T filter < "${TMP_FILE6}"
-        if [ $? -eq 1 ]; then
-            logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv6 rules"
-            release_lockfile
-            exit 1
-        fi
+        load_empty_ipsets_to_iptables
+        store_iptables
+        restore_iptables
 
         logger -t turris-firewall-rules "(v${VERSION}) Turris rules haven't been downloaded from the server yet."
     fi
@@ -552,11 +561,6 @@ if [ -n "${WAN}" ]; then
     CHAIN="turris"
 
     test_skip_filter
-
-    # Don't any turris related rules and COMMIT
-    iptables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE}"
-    ip6tables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE6}"
-
 
     if test_ipset_modules ; then
 
@@ -569,6 +573,8 @@ if [ -n "${WAN}" ]; then
 
     rm -f "${TMP_FILE}"
     rm -f "${TMP_FILE6}"
+    rm -f "${TMP_FILE}.part"
+    rm -f "${TMP_FILE6}.part"
 fi
 
 release_lockfile
