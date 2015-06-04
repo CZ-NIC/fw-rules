@@ -322,10 +322,8 @@ load_ipsets_to_iptables() {
     eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}.part"
     eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}.part"
 
-    local count="$(grep '^add [^ ]*_4' ${PERSISTENT_IPSETS} | wc -l)"
-    local count6="$(grep '^add [^ ]*_6' ${PERSISTENT_IPSETS} | wc -l)"
-    local skip_count=0
-    local override_count=0
+    skip_count=0
+    override_count=0
 
     # Load new ipsets
     ipset restore -f "${PERSISTENT_IPSETS}"
@@ -545,7 +543,9 @@ apply_isets() {
         store_iptables
         restore_iptables
 
-        md5=$(file_md5 "${PERSISTENT_IPSETS}")
+        local md5=$(file_md5 "${PERSISTENT_IPSETS}")
+        local count="$(grep '^add [^ ]*_4' ${PERSISTENT_IPSETS} | wc -l)"
+        local count6="$(grep '^add [^ ]*_6' ${PERSISTENT_IPSETS} | wc -l)"
         logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded ($md5), ${override_count} rule(s) overriden, ${skip_count} rule(s) skipped"
     else
 
