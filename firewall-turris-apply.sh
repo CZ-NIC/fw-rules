@@ -354,14 +354,16 @@ load_ipsets_to_iptables() {
     # add a new chain for extensive pcap logging
     echo ':turris-nflog - [0:0]' >> "${TMP_FILE}.part"
     echo ':turris-nflog - [0:0]' >> "${TMP_FILE6}.part"
-    eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}.part"
-    eval echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}.part"
+    echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}.part"
+    echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}.part"
 
     # add a new chain for storing dropped packets which match issued with a propper ID
-    echo ':turris-reject - [0:0]' >> "${TMP_FILE}.part"
-    echo ':turris-reject - [0:0]' >> "${TMP_FILE6}.part"
-    eval echo "-I reject -j turris-reject" >> "${TMP_FILE}.part"
-    eval echo "-I reject -j turris-reject" >> "${TMP_FILE6}.part"
+    echo ':turris-log-incoming - [0:0]' >> "${TMP_FILE}.part"
+    echo ':turris-log-incoming - [0:0]' >> "${TMP_FILE6}.part"
+    echo "-I reject -j turris-log-incoming" >> "${TMP_FILE}.part"
+    echo "-I reject -j turris-log-incoming" >> "${TMP_FILE6}.part"
+    echo "-I drop -j turris-log-incoming" >> "${TMP_FILE}.part"
+    echo "-I drop -j turris-log-incoming" >> "${TMP_FILE6}.part"
 
     # restart ulogd to reinit configuration
     ulogd_restart "${nflog}"
@@ -462,14 +464,14 @@ load_ipsets_to_iptables() {
             "l")
                 eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                 eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-reject -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
+                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-log-incoming -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-log-incoming -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
                 ;;
             "lb")
                 eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
                 eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-reject -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-reject -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
+                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-log-incoming -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-log-incoming -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
                 eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
                 eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
                 ;;
@@ -489,10 +491,10 @@ load_ipsets_to_iptables() {
     echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
     echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
     echo -e "${return_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
-    echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
+    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
     echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
     echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
-    echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
+    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
     echo -e "${drop_rules_4}" >> "${TMP_FILE}.part"
     echo -e "${drop_rules_6}" >> "${TMP_FILE6}.part"
 
@@ -502,12 +504,14 @@ load_ipsets_to_iptables() {
 }
 
 load_empty_ipsets_to_iptables() {
-    echo ":turris-reject - [0:0]" > "${TMP_FILE}.part"
-    echo ":turris-reject - [0:0]" > "${TMP_FILE6}.part"
-    echo "-I reject -j turris-reject" >> "${TMP_FILE}.part"
-    echo "-I reject -j turris-reject" >> "${TMP_FILE6}.part"
-    echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
-    echo -e "-A turris-reject -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
+    echo ":turris-log-incoming - [0:0]" > "${TMP_FILE}.part"
+    echo ":turris-log-incoming - [0:0]" > "${TMP_FILE6}.part"
+    echo "-I reject -j turris-log-incoming" >> "${TMP_FILE}.part"
+    echo "-I reject -j turris-log-incoming" >> "${TMP_FILE6}.part"
+    echo "-I drop -j turris-log-incoming" >> "${TMP_FILE}.part"
+    echo "-I drop -j turris-log-incoming" >> "${TMP_FILE6}.part"
+    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
+    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
     echo COMMIT >> "${TMP_FILE}.part"
     echo COMMIT >> "${TMP_FILE6}.part"
 }
