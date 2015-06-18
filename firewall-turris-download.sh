@@ -72,15 +72,15 @@ if [ -n "${DEBUG}" ] ; then
     set -x
 fi
 
-IPSETS_URL="https://api.turris.cz/firewall/turris-ipsets"
+IPSETS_URL="https://api.turris.cz/firewall/turris-ipsets.gz"
 IPSETS_SIGN_URL="${IPSETS_URL}.sign"
-PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets"
+PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets.gz"
 
 RULE_DESCRIPTION_FILE="/tmp/rule-description.txt"
 RULE_DESCRIPTION_AWK_FILE="/tmp/rule-description.awk"
 
 DOWNLOAD_DIR="/tmp/fw-rules"
-DOWNLOAD_IPSETS="${DOWNLOAD_DIR}/turris-ipsets"
+DOWNLOAD_IPSETS="${DOWNLOAD_DIR}/turris-ipsets.gz"
 DOWNLOAD_IPSETS_SIGN="${DOWNLOAD_IPSETS}.sign"
 
 SIGN_KEY="/etc/ssl/turris-rules.pub"
@@ -89,7 +89,7 @@ VERSION=0
 
 TEST_SIGN_KEY="${DOWNLOAD_DIR}/turris-rules.pub"
 TEST_SIGN_KEY_URL="https://api.turris.cz/firewall-test/turris-rules.pub"
-TEST_IPSETS_URL="https://api.turris.cz/firewall-test/turris-ipsets"
+TEST_IPSETS_URL="https://api.turris.cz/firewall-test/turris-ipsets.gz"
 TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
 
 CRL_FILE_PERSISTENT="/etc/ssl/crl.pem"
@@ -131,7 +131,7 @@ BEGIN {
     comments_idx=0
 }
 EOF
-    awk -f "$RULE_DESCRIPTION_AWK_FILE" < "$PERSISTENT_IPSETS" > "$RULE_DESCRIPTION_FILE"
+    gunzip -c "$PERSISTENT_IPSETS" | awk -f "$RULE_DESCRIPTION_AWK_FILE" - > "$RULE_DESCRIPTION_FILE"
     rm -rf "$RULE_DESCRIPTION_AWK_FILE"
 }
 
@@ -228,6 +228,9 @@ update_file() {
         if [ $? -eq 1 ]; then
             local old_md5=$(file_md5 "${persistent}")
             logger -t turris-firewall-rules "(v${VERSION}) Switching ${file_name} ${old_md5} -> ${new_md5}"
+        else
+            # No need to update the file
+            return 0
         fi
     else
         logger -t turris-firewall-rules "(v${VERSION}) Setting ${file_name} ${new_md5}"
@@ -254,6 +257,12 @@ test_branch() {
 
 
 ########## Actual code ##########
+# Try to update CRL
+get-api-crl 1>/dev/null 2>&1
+
+# Create directory for the rules
+mkdir -p "${DOWNLOAD_DIR}"
+
 if test_branch ; then
     if [ ! -f "${TEST_SIGN_KEY}" ] ; then
         curl -fs --cacert /etc/ssl/startcom.pem --crlfile "${CRL_FILE}" "${TEST_SIGN_KEY_URL}" -o "${TEST_SIGN_KEY}"
@@ -263,12 +272,6 @@ else
     test="false"
 fi
 
-# Create directory for the rules
-mkdir -p "${DOWNLOAD_DIR}"
-
-# Try to update CRL
-get-api-crl 1>/dev/null 2>&1
-
 # Download the ipsets signature
 download "${IPSETS_SIGN_URL}" "${TEST_IPSETS_SIGN_URL}" "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_INTERVAL}"
 
@@ -276,8 +279,9 @@ download "${IPSETS_SIGN_URL}" "${TEST_IPSETS_SIGN_URL}" "${DOWNLOAD_IPSETS_SIGN}
 if [ -f "${PERSISTENT_IPSETS}" ]; then
     verify_signature "${PERSISTENT_IPSETS}" "${DOWNLOAD_IPSETS_SIGN}"
     if [ $? -eq 0 ]; then
-        # Skip when signature matches
-        :
+        # Signature matches we can copy persistent rules to tmp
+        # this way file DOWNLOAD_IPSETS will always exits
+        cp "${PERSISTENT_IPSETS}" "${DOWNLOAD_IPSETS}"
     else
         # download new rules
         download "${IPSETS_URL}" "${TEST_IPSETS_URL}" "${DOWNLOAD_IPSETS}"

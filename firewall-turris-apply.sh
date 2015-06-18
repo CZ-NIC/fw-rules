@@ -91,7 +91,8 @@ fi
 
 TMP_FILE="/tmp/iptables.rules"
 TMP_FILE6="/tmp/ip6tables.rules"
-PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets"
+PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets.gz"
+TMP_IPSETS="/tmp/turris-ipsets"
 ULOGD_FILE="/tmp/etc/ulogd-turris.conf"
 PCAP_DIR="/var/log/turris-pcap"
 
@@ -130,6 +131,14 @@ while [ -z "${WAN}" ]; do
         exit 1
     fi
 done
+
+remove_tmp_files() {
+    rm -f "${TMP_FILE}"
+    rm -f "${TMP_FILE6}"
+    rm -f "${TMP_FILE}.part"
+    rm -f "${TMP_FILE6}.part"
+    rm -f "${TMP_IPSETS}"
+}
 
 # Return md5 of a file the file should exist
 file_md5() {
@@ -326,11 +335,17 @@ load_ipsets_to_iptables() {
     override_count=0
 
     # Load new ipsets
-    ipset restore -f "${PERSISTENT_IPSETS}"
+    ipset restore -f "${TMP_IPSETS}"
+    if [ ! "$?" = 0 ]; then
+        logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to restore ipsets"
+        remove_tmp_files
+        release_lockfile
+        exit 1
+    fi
 
     # Create all if exist swap otherwise rename append rules
     local old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
-    local new_names="$(grep create ${PERSISTENT_IPSETS} | cut -d' ' -f2 | sort)"
+    local new_names="$(grep create ${TMP_IPSETS} | cut -d' ' -f2 | sort)"
 
     # Should NFLOG be activated (to be applied)
     nflog_idx=0
@@ -542,14 +557,22 @@ restore_iptables() {
 
 apply_isets() {
     if [ -f "${PERSISTENT_IPSETS}" ]; then
+        # Unpack PERSISTENT_IPSETS
+        gunzip -c "${PERSISTENT_IPSETS}" > "${TMP_IPSETS}" 2>/dev/null
+        if [ ! "$?" = 0 ]; then
+            logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to unpack ipset rules"
+            remove_tmp_files
+            release_lockfile
+            exit 1
+        fi
 
         load_ipsets_to_iptables
         store_iptables
         restore_iptables
 
         local md5=$(file_md5 "${PERSISTENT_IPSETS}")
-        local count="$(grep '^add [^ ]*_4' ${PERSISTENT_IPSETS} | wc -l)"
-        local count6="$(grep '^add [^ ]*_6' ${PERSISTENT_IPSETS} | wc -l)"
+        local count="$(grep '^add [^ ]*_4' ${TMP_IPSETS} | wc -l)"
+        local count6="$(grep '^add [^ ]*_6' ${TMP_IPSETS} | wc -l)"
         logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded ($md5), ${override_count} rule(s) overriden, ${skip_count} rule(s) skipped"
     else
 
@@ -575,10 +598,7 @@ if [ -n "${WAN}" ]; then
         logger -t turris-firewall-rules "(v${VERSION}) Ipset modules not loaded. Turris rules were not applied!"
     fi
 
-    rm -f "${TMP_FILE}"
-    rm -f "${TMP_FILE6}"
-    rm -f "${TMP_FILE}.part"
-    rm -f "${TMP_FILE6}.part"
+    remove_tmp_files
 fi
 
 release_lockfile
