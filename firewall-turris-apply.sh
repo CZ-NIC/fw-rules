@@ -328,8 +328,8 @@ load_ipsets_to_iptables() {
     # Append header to files
     echo ':turris - [0:0]' > "${TMP_FILE}.part"
     echo ':turris - [0:0]' > "${TMP_FILE6}.part"
-    eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE}.part"
-    eval echo "-I accept -o ${WAN} -j turris" >> "${TMP_FILE6}.part"
+    eval echo "-I accept -j turris" >> "${TMP_FILE}.part"
+    eval echo "-I accept -j turris" >> "${TMP_FILE6}.part"
 
     skip_count=0
     override_count=0
