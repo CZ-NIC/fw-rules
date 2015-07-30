@@ -179,7 +179,8 @@ test_nflog() {
 
         # test using uci
         config_get_bool pcap_enabled pcap enabled "0"
-        if [ "$pcap_enabled" = "1" ]; then
+        global_pcap_enabled="$pcap_enabled"
+        if [ "$pcap_enabled" = "1" -o -n "$overrides_pcap_enabled_true" ]; then
             return 0
         fi
     fi
@@ -261,9 +262,29 @@ is_in_list() {
 
 # create config for ulogd
 make_ulogd_config() {
-    local ids="$@"
+    local ids="$1"
+    local true_overrides="$2"
+    local false_overrides="$3"
+    local enabled="$4"
     local idx=0
     local rule_id
+    local final_list=""
+
+    for rule_id in $ids; do
+        if [ "$enabled" == "1" ]; then
+            if is_in_list "${rule_id}" "${false_overrides}"; then
+                continue
+            else
+                final_list="$final_list ${rule_id}"
+            fi
+        elif [ "$enabled" == "0" ]; then
+            if is_in_list "${rule_id}" "${true_overrides}"; then
+                final_list="$final_list ${rule_id}"
+            else
+                continue
+            fi
+        fi
+    done
 
     # Create a directory for logging
     mkdir -p "${PCAP_DIR}"
@@ -276,7 +297,7 @@ make_ulogd_config() {
     echo "plugin=\"/usr/lib/ulogd/ulogd_raw2packet_BASE.so\"" >> "${ULOGD_FILE}"
 
     # stacks
-    for rule_id in $ids; do
+    for rule_id in $final_list; do
         group_id=$(($idx + 1000))
         echo "stack=log${group_id}:NFLOG,base1:BASE,pcap${group_id}:PCAP" >> "${ULOGD_FILE}"
         idx=$(($idx + 1))
@@ -284,7 +305,7 @@ make_ulogd_config() {
 
     idx=0
     # sections
-    for rule_id in $ids; do
+    for rule_id in $final_list; do
         group_id=$(($idx + 1000))
         echo "[log${group_id}]" >> "${ULOGD_FILE}"
         echo "group=${group_id}" >> "${ULOGD_FILE}"
@@ -296,7 +317,6 @@ make_ulogd_config() {
 }
 
 ulogd_restart() {
-    local log="$1"
 
     # restart when checksum does not exist
     if [ ! -e "${ULOGD_FILE}.md5" ]; then
@@ -307,13 +327,11 @@ ulogd_restart() {
         # restart when the configuration changes
         if md5sum -s -c "${ULOGD_FILE}.md5"; then
 
-            # restart when log is enabled and the process is not running
-            if [ "${log}" = "yes" ]; then
-                if start-stop-daemon -q -K -t -x /usr/sbin/ulogd; then
-                    :
-                else
-                    /etc/init.d/ulogd restart
-                fi
+            # restart when the process is not running
+            if start-stop-daemon -q -K -t -x /usr/sbin/ulogd; then
+                :
+            else
+                /etc/init.d/ulogd restart
             fi
         else
             /etc/init.d/ulogd restart
@@ -347,13 +365,16 @@ load_ipsets_to_iptables() {
     local old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
     local new_names="$(grep create ${TMP_IPSETS} | cut -d' ' -f2 | sort)"
 
+    # load the overrides
+    load_overrides
+
     # Should NFLOG be activated (to be applied)
     nflog_idx=0
     if test_nflog ; then
         nflog="yes"
 
         local rule_ids=$(echo "${new_names}" | cut -d_ -f2)
-        make_ulogd_config "${rule_ids}"
+        make_ulogd_config "${rule_ids}" "${overrides_pcap_enabled_true}" "${overrides_pcap_enabled_false}" "${global_pcap_enabled}"
 
     else
         # clear the log file when disabled
@@ -390,9 +411,6 @@ load_ipsets_to_iptables() {
     local nflog_rules_6=""
     local log_rules_6=""
     local drop_rules_6=""
-
-    # load the overrides
-    load_overrides
 
     # Create iptables rules
     for ipset_name in ${new_names}; do
@@ -461,7 +479,11 @@ load_ipsets_to_iptables() {
         elif is_in_list "${rule_id}" "${overrides_pcap_enabled_false}"; then
             local nflog_local="no"
         else
-            local nflog_local=$nflog
+            if [ "$global_pcap_enabled" == "1" ]; then
+                local nflog_local="yes"
+            else
+                local nflog_local="no"
+            fi
         fi
 
         if [ ! "$action" == "n" -a "$nflog_local" == "yes" ]; then
