@@ -516,8 +516,10 @@ load_ipsets_to_iptables() {
                 skip_count=$(($skip_count + 1))
         esac
 
-        # increase nflog_group number
-        nflog_idx=$(($nflog_idx + 1))
+        if [ "$nflog_local" == "yes" ]; then
+            # increase nflog_group number
+            nflog_idx=$(($nflog_idx + 1))
+        fi
     done
 
     echo -e "${nflog_rules_4}" >> "${TMP_FILE}.part"
