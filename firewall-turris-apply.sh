@@ -275,6 +275,7 @@ make_ulogd_config() {
     local true_overrides="$2"
     local false_overrides="$3"
     local enabled="$4"
+    local dropped="$5"
     local idx=0
     local rule_id
     local final_list=""
@@ -305,12 +306,24 @@ make_ulogd_config() {
     echo "plugin=\"/usr/lib/ulogd/ulogd_output_PCAP.so\"" >> "${ULOGD_FILE}"
     echo "plugin=\"/usr/lib/ulogd/ulogd_raw2packet_BASE.so\"" >> "${ULOGD_FILE}"
 
+    if [ $enabled == "yes" -a $dropped == "yes" ]; then
+        echo "stack=log999:NFLOG,base1:BASE,pcap999:PCAP" >> "${ULOGD_FILE}"
+    fi
+
     # stacks
     for rule_id in $final_list; do
         group_id=$(($idx + 1000))
         echo "stack=log${group_id}:NFLOG,base1:BASE,pcap${group_id}:PCAP" >> "${ULOGD_FILE}"
         idx=$(($idx + 1))
     done
+
+    if [ $enabled == "yes" -a $dropped == "yes" ]; then
+        echo "[log999]" >> "${ULOGD_FILE}"
+        echo "group=999" >> "${ULOGD_FILE}"
+        echo "[pcap999]" >> "${ULOGD_FILE}"
+        echo "file=\"${PCAP_DIR}/00000000.pcap\"" >> "${ULOGD_FILE}"
+        echo "sync=1" >> "${ULOGD_FILE}"
+    fi
 
     idx=0
     # sections
@@ -386,7 +399,7 @@ load_ipsets_to_iptables() {
     if [ "$global_nflog_modules" = "yes" -a \( "$global_pcap_enabled" = "yes" -o -n "$overrides_pcap_enabled_true" \) ] ; then
 
         local rule_ids=$(echo "${new_names}" | cut -d_ -f2)
-        make_ulogd_config "${rule_ids}" "${overrides_pcap_enabled_true}" "${overrides_pcap_enabled_false}" "${global_pcap_enabled}"
+        make_ulogd_config "${rule_ids}" "${overrides_pcap_enabled_true}" "${overrides_pcap_enabled_false}" "${global_pcap_enabled}" "${global_nflog_dropped}"
 
     else
         # clear the log file when disabled
@@ -481,7 +494,7 @@ load_ipsets_to_iptables() {
             local nflog_chain_local="turris"
         else
             local nflog_extensive_local=$global_nflog_extensive
-            local nflog_chain_local=$nflog_chain
+            local nflog_chain_local=$global_nflog_chain
         fi
         if [ "$nflog_extensive_local" = "no" ]; then
             if is_in_list "${rule_id}" "${overrides_pcap_dropped_true}"; then
@@ -547,16 +560,24 @@ load_ipsets_to_iptables() {
 
     # iptables-restore does not like ' character
     echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
-    echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
     echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
     echo -e "${nflog_log_drop_4}" >> "${TMP_FILE}.part"
     echo -e "${return_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
     echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
+    if [ $global_pcap_enabled = "yes" -a $global_nflog_dropped = "yes" ]; then
+        echo -e "-A turris-log-incoming -i ${WAN} -m comment --comment turris-nflog -j NFLOG --nflog-group 999" >> "${TMP_FILE}.part"
+    fi
+    echo -e "${drop_rules_4}" >> "${TMP_FILE}.part"
+
+    echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
     echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
     echo -e "${nflog_log_drop_6}" >> "${TMP_FILE6}.part"
     echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
     echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
-    echo -e "${drop_rules_4}" >> "${TMP_FILE}.part"
+    if [ $global_pcap_enabled = "yes" -a $global_nflog_dropped = "yes" ]; then
+        echo -e "-A turris-log-incoming -i ${WAN} -m comment --comment turris-nflog -j NFLOG --nflog-group 999" >> "${TMP_FILE6}.part"
+    fi
+    echo -e "" >> "${TMP_FILE6}.part"
     echo -e "${drop_rules_6}" >> "${TMP_FILE6}.part"
 
     # Add the commit
