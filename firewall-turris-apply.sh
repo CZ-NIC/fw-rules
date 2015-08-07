@@ -148,7 +148,7 @@ file_md5() {
 
 # Test whether sysctl variable net.netfilter.nf_conntrack_skip_filter variable is set properly
 test_skip_filter() {
-    if [ "$(sysctl -e -n net.netfilter.nf_conntrack_skip_filter)" == "1" ]; then
+    if [ "$(sysctl -e -n net.netfilter.nf_conntrack_skip_filter)" = "1" ]; then
         logger -t turris-firewall-rules -p err "(v${VERSION}) sysctl variable net.netfilter.nf_conntrack_skip_filter is set to 1. Some features of the firewall might not work properly. Please consider setting it to 0."
     fi
 }
@@ -203,6 +203,21 @@ test_nflog_extensive() {
     return 1
 }
 
+test_nflog_log_dropped() {
+    local pcap_dropped
+    if test_nflog_modules ; then
+
+        config_load firewall-turris
+        # test using uci
+
+        config_get_bool pcap_dropped pcap log_dropped "0"
+        if [ "$pcap_dropped" = "1" ]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Load overrides
 load_overrides() {
     overrides_block=""
@@ -213,6 +228,8 @@ load_overrides() {
     overrides_pcap_enabled_false=""
     overrides_pcap_extensive_true=""
     overrides_pcap_extensive_false=""
+    overrides_pcap_dropped_true=""
+    overrides_pcap_dropped_false=""
 
     config_load firewall-turris
 
@@ -220,30 +237,40 @@ load_overrides() {
         local cfg="$1"
         local rule_id
         local action
+        local pcap_enabled
+        local pcap_extensive
+        local pcap_log_dropped
+
         config_get rule_id "${cfg}" rule_id "${cfg}"
 
         config_get action "${cfg}" action
-        if [ "$action" == "block" ]; then
+        if [ "$action" = "block" ]; then
             overrides_block="$overrides_block $rule_id"
-        elif [ "$action" == "log" ]; then
+        elif [ "$action" = "log" ]; then
             overrides_log="$overrides_log $rule_id"
-        elif [ "$action" == "log_and_block" ]; then
+        elif [ "$action" = "log_and_block" ]; then
             overrides_log_and_block="$overrides_log_and_block $rule_id"
-        elif [ "$action" == "nothing" ]; then
+        elif [ "$action" = "nothing" ]; then
             overrides_nothing="$overrides_nothing $rule_id"
         fi
 
         config_get_bool pcap_enabled "${cfg}" pcap_enabled ""
-        if [ "$pcap_enabled" == "1" ]; then
+        if [ "$pcap_enabled" = "1" ]; then
             overrides_pcap_enabled_true="$overrides_pcap_enabled_true $rule_id"
-        elif [ "$pcap_enabled" == "0" ]; then
+        elif [ "$pcap_enabled" = "0" ]; then
             overrides_pcap_enabled_false="$overrides_pcap_enabled_false $rule_id"
         fi
         config_get_bool pcap_extensive "${cfg}" pcap_extensive ""
-        if [ "$pcap_extensive" == "1" ]; then
+        if [ "$pcap_extensive" = "1" ]; then
             overrides_pcap_extensive_true="$overrides_pcap_extensive_true $rule_id"
-        elif [ "$pcap_extensive" == "0" ]; then
+        elif [ "$pcap_extensive" = "0" ]; then
             overrides_pcap_extensive_false="$overrides_pcap_extensive_false $rule_id"
+        fi
+        config_get_bool pcap_log_dropped "${cfg}" pcap_log_dropped ""
+        if [ "$pcap_log_dropped" = "1" ]; then
+            overrides_pcap_dropped_true="$overrides_pcap_dropped_true $rule_id"
+        elif [ "$pcap_log_dropped" = "0" ]; then
+            overrides_pcap_dropped_false="$overrides_pcap_dropped_false $rule_id"
         fi
     }
 
@@ -254,7 +281,7 @@ load_overrides() {
 is_in_list() {
     local item="$1"
     local list="$2"
-    if [ "${list/$item}" == "${list}" ]; then
+    if [ "${list/$item}" = "${list}" ]; then
         return 1
     fi
     return 0
@@ -271,13 +298,13 @@ make_ulogd_config() {
     local final_list=""
 
     for rule_id in $ids; do
-        if [ "$enabled" == "1" ]; then
+        if [ "$enabled" = "1" ]; then
             if is_in_list "${rule_id}" "${false_overrides}"; then
                 continue
             else
                 final_list="$final_list ${rule_id}"
             fi
-        elif [ "$enabled" == "0" ]; then
+        elif [ "$enabled" = "0" ]; then
             if is_in_list "${rule_id}" "${true_overrides}"; then
                 final_list="$final_list ${rule_id}"
             else
@@ -386,12 +413,21 @@ load_ipsets_to_iptables() {
     else
         nflog_chain="turris"
     fi
+    if test_nflog_log_dropped; then
+        nflog_dropped="yes"
+    else
+        nflog_dropped="no"
+    fi
 
     # add a new chain for extensive pcap logging
     echo ':turris-nflog - [0:0]' >> "${TMP_FILE}.part"
     echo ':turris-nflog - [0:0]' >> "${TMP_FILE6}.part"
     echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}.part"
     echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}.part"
+    echo "-I input_rule -j turris-nflog" >> "${TMP_FILE}.part"
+    echo "-I input_rule -j turris-nflog" >> "${TMP_FILE6}.part"
+    echo "-I output_rule -j turris-nflog" >> "${TMP_FILE}.part"
+    echo "-I output_rule -j turris-nflog" >> "${TMP_FILE6}.part"
 
     # add a new chain for storing dropped packets which match issued with a propper ID
     echo ':turris-log-incoming - [0:0]' >> "${TMP_FILE}.part"
@@ -473,23 +509,37 @@ load_ipsets_to_iptables() {
             local nflog_extensive_local=$nflog_extensive
             local nflog_chain_local=$nflog_chain
         fi
+        if [ "$nflog_extensive_local" = "no" ]; then
+            if is_in_list "${rule_id}" "${overrides_pcap_dropped_true}"; then
+                local nflog_dropped_local="yes"
+            elif is_in_list "${rule_id}" "${overrides_pcap_dropped_false}"; then
+                local nflog_dropped_local="no"
+            else
+                local nflog_dropped_local=$nflog_dropped
+            fi
+        else
+            local nflog_dropped_local="no"
+        fi
 
         if is_in_list "${rule_id}" "${overrides_pcap_enabled_true}"; then
             local nflog_local="yes"
         elif is_in_list "${rule_id}" "${overrides_pcap_enabled_false}"; then
             local nflog_local="no"
         else
-            if [ "$global_pcap_enabled" == "1" ]; then
+            if [ "$global_pcap_enabled" = "1" ]; then
                 local nflog_local="yes"
             else
                 local nflog_local="no"
             fi
         fi
 
-        if [ ! "$action" == "n" -a "$nflog_local" == "yes" ]; then
+        if [ ! "$action" = "n" -a "$nflog_local" = "yes" ]; then
             eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
-            if [ "$nflog_extensive_local" == "yes" ]; then
+            if [ "$nflog_extensive_local" = "yes" ]; then
                 eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+            fi
+            if [ "$nflog_dropped_local" =  "yes" ]; then
+                eval nflog_log_drop_${ip_type}=\"$(eval echo '$'nflog_log_drop_${ip_type})"-A turris-log-incoming -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
             fi
         fi
 
@@ -516,7 +566,7 @@ load_ipsets_to_iptables() {
                 skip_count=$(($skip_count + 1))
         esac
 
-        if [ "$nflog_local" == "yes" ]; then
+        if [ "$nflog_local" = "yes" ]; then
             # increase nflog_group number
             nflog_idx=$(($nflog_idx + 1))
         fi
@@ -529,9 +579,11 @@ load_ipsets_to_iptables() {
     echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
     echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
     echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
+    echo -e "${nflog_log_drop_4}" >> "${TMP_FILE}.part"
     echo -e "${return_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
     echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
     echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
+    echo -e "${nflog_log_drop_6}" >> "${TMP_FILE6}.part"
     echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
     echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
     echo -e "${drop_rules_4}" >> "${TMP_FILE}.part"
