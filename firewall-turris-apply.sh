@@ -162,60 +162,42 @@ test_ipset_modules() {
     fi
 }
 
-# is NFLOG module loaded
-test_nflog_modules() {
+# load nflog values
+load_nflog_variables() {
     if [ -n "$(lsmod | grep xt_NFLOG)" ]; then
-        return 0
+        global_nflog_modules="yes"
     else
-        return 1
+        global_nflog_modules="no"
     fi
-}
 
-# Should load NFLOG
-test_nflog() {
-    if test_nflog_modules ; then
+    config_load firewall-turris
 
-        config_load firewall-turris
-
-        # test using uci
-        config_get_bool pcap_enabled pcap enabled "0"
-        global_pcap_enabled="$pcap_enabled"
-        if [ "$pcap_enabled" = "1" -o -n "$overrides_pcap_enabled_true" ]; then
-            return 0
-        fi
+    local pcap_extensive
+    config_get_bool pcap_extensive pcap extensive "0"
+    if [ "$pcap_extensive" = "1" ]; then
+        global_nflog_extensive="yes"
+        global_nflog_chain="turris-nflog"
+    else
+        global_nflog_extensive="no"
+        global_nflog_chain="turris"
     fi
-    return 1
-}
 
-# Should use exensive dumping
-# might create huge dumps...
-test_nflog_extensive() {
-    if test_nflog_modules ; then
-
-        config_load firewall-turris
-
-        # test using uci
-        config_get_bool pcap_extensive pcap extensive "0"
-        if [ "$pcap_extensive" = "1" ]; then
-            return 0
-        fi
-    fi
-    return 1
-}
-
-test_nflog_log_dropped() {
     local pcap_dropped
-    if test_nflog_modules ; then
-
-        config_load firewall-turris
-        # test using uci
-
-        config_get_bool pcap_dropped pcap log_dropped "0"
-        if [ "$pcap_dropped" = "1" ]; then
-            return 0
-        fi
+    config_get_bool pcap_dropped pcap log_dropped "0"
+    if [ "$pcap_dropped" = "1" ]; then
+        global_nflog_dropped="yes"
+    else
+        global_nflog_dropped="no"
     fi
-    return 1
+
+    local pcap_enabled
+    config_get_bool pcap_enabled pcap enabled "0"
+    global_pcap_enabled="$pcap_enabled"
+    if [ "$pcap_enabled" = "1" ]; then
+        global_pcap_enabled="yes"
+    else
+        global_pcap_enabled="no"
+    fi
 }
 
 # Load overrides
@@ -298,13 +280,13 @@ make_ulogd_config() {
     local final_list=""
 
     for rule_id in $ids; do
-        if [ "$enabled" = "1" ]; then
+        if [ "$enabled" = "yes" ]; then
             if is_in_list "${rule_id}" "${false_overrides}"; then
                 continue
             else
                 final_list="$final_list ${rule_id}"
             fi
-        elif [ "$enabled" = "0" ]; then
+        elif [ "$enabled" = "no" ]; then
             if is_in_list "${rule_id}" "${true_overrides}"; then
                 final_list="$final_list ${rule_id}"
             else
@@ -395,10 +377,13 @@ load_ipsets_to_iptables() {
     # load the overrides
     load_overrides
 
-    # Should NFLOG be activated (to be applied)
+    # load local variables
+    load_nflog_variables
+
     nflog_idx=0
-    if test_nflog ; then
-        nflog="yes"
+
+    # Should NFLOG be activated (to be applied)
+    if [ "$global_nflog_modules" = "yes" -a \( "$global_pcap_enabled" = "yes" -o -n "$overrides_pcap_enabled_true" \) ] ; then
 
         local rule_ids=$(echo "${new_names}" | cut -d_ -f2)
         make_ulogd_config "${rule_ids}" "${overrides_pcap_enabled_true}" "${overrides_pcap_enabled_false}" "${global_pcap_enabled}"
@@ -406,17 +391,6 @@ load_ipsets_to_iptables() {
     else
         # clear the log file when disabled
         echo > "${ULOGD_FILE}"
-    fi
-    if test_nflog_extensive ; then
-        nflog_extensive="yes"
-        nflog_chain="turris-nflog"
-    else
-        nflog_chain="turris"
-    fi
-    if test_nflog_log_dropped; then
-        nflog_dropped="yes"
-    else
-        nflog_dropped="no"
     fi
 
     # add a new chain for extensive pcap logging
@@ -438,7 +412,7 @@ load_ipsets_to_iptables() {
     echo "-I drop -j turris-log-incoming" >> "${TMP_FILE6}.part"
 
     # restart ulogd to reinit configuration
-    ulogd_restart "${nflog}"
+    ulogd_restart
 
     local nflog_rules_4=""
     local log_rules_4=""
@@ -506,7 +480,7 @@ load_ipsets_to_iptables() {
             local nflog_extensive_local="no"
             local nflog_chain_local="turris"
         else
-            local nflog_extensive_local=$nflog_extensive
+            local nflog_extensive_local=$global_nflog_extensive
             local nflog_chain_local=$nflog_chain
         fi
         if [ "$nflog_extensive_local" = "no" ]; then
@@ -515,7 +489,7 @@ load_ipsets_to_iptables() {
             elif is_in_list "${rule_id}" "${overrides_pcap_dropped_false}"; then
                 local nflog_dropped_local="no"
             else
-                local nflog_dropped_local=$nflog_dropped
+                local nflog_dropped_local=$global_nflog_dropped
             fi
         else
             local nflog_dropped_local="no"
@@ -526,11 +500,7 @@ load_ipsets_to_iptables() {
         elif is_in_list "${rule_id}" "${overrides_pcap_enabled_false}"; then
             local nflog_local="no"
         else
-            if [ "$global_pcap_enabled" = "1" ]; then
-                local nflog_local="yes"
-            else
-                local nflog_local="no"
-            fi
+            nflog_local=$global_pcap_enabled
         fi
 
         if [ ! "$action" = "n" -a "$nflog_local" = "yes" ]; then
