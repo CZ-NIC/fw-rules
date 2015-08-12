@@ -45,7 +45,7 @@ acquire_lockfile() {
     if [ -e "${LOCK_FILE}" ]; then
         if kill -0 `cat "${LOCK_FILE}"`; then
             logger -t turris-firewall-rules -p err "An instance of turris-firewall-rules is already running!"
-            exit 1
+            return 1
         else
             rm -rf "${LOCK_FILE}"
         fi
@@ -54,9 +54,11 @@ acquire_lockfile() {
     echo -n $$ > "${LOCK_FILE}"
     if [ ! "$?" = 0 ]; then
         logger -t turris-firewall-rules -p err "An instance of turris-firewall-rules is already running!"
-        exit 1
+        return 1
     fi
     set +o noclobber
+
+    return 0
 }
 
 release_lockfile() {
@@ -65,7 +67,12 @@ release_lockfile() {
     fi
 }
 
-acquire_lockfile
+exit_on_failure() {
+    release_lockfile
+    exit 1
+}
+
+acquire_lockfile || exit_on_failure
 
 # Enable debug
 if [ -n "${DEBUG}" ] ; then
@@ -273,7 +280,7 @@ else
 fi
 
 # Download the ipsets signature
-download "${IPSETS_SIGN_URL}" "${TEST_IPSETS_SIGN_URL}" "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_INTERVAL}"
+download "${IPSETS_SIGN_URL}" "${TEST_IPSETS_SIGN_URL}" "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_INTERVAL}" || exit_on_failure
 
 # test whether is necessary to download the whole file
 if [ -f "${PERSISTENT_IPSETS}" ]; then
@@ -284,10 +291,10 @@ if [ -f "${PERSISTENT_IPSETS}" ]; then
         cp "${PERSISTENT_IPSETS}" "${DOWNLOAD_IPSETS}"
     else
         # download new rules
-        download "${IPSETS_URL}" "${TEST_IPSETS_URL}" "${DOWNLOAD_IPSETS}"
+        download "${IPSETS_URL}" "${TEST_IPSETS_URL}" "${DOWNLOAD_IPSETS}" || exit_on_failure
     fi
 else
-    download "${IPSETS_URL}" "${TEST_IPSETS_URL}" "${DOWNLOAD_IPSETS}"
+    download "${IPSETS_URL}" "${TEST_IPSETS_URL}" "${DOWNLOAD_IPSETS}" || exit_on_failure
 fi
 
 # update file in the persistent memory
