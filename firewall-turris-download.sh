@@ -83,9 +83,6 @@ IPSETS_URL="https://api.turris.cz/firewall/turris-ipsets.gz"
 IPSETS_SIGN_URL="${IPSETS_URL}.sign"
 PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets.gz"
 
-RULE_DESCRIPTION_FILE="/tmp/rule-description.txt"
-RULE_DESCRIPTION_AWK_FILE="/tmp/rule-description.awk"
-
 DOWNLOAD_DIR="/tmp/fw-rules"
 DOWNLOAD_IPSETS="${DOWNLOAD_DIR}/turris-ipsets.gz"
 DOWNLOAD_IPSETS_SIGN="${DOWNLOAD_IPSETS}.sign"
@@ -108,39 +105,6 @@ if [ -f "${CRL_FILE_TEMPORAL}" ]; then
 else
     CRL_FILE="${CRL_FILE_PERSISTENT}"
 fi
-
-generate_rule_description_file() {
-    cat > $RULE_DESCRIPTION_AWK_FILE <<"EOF"
-BEGIN {
-    comments=""
-    comments_idx=0
-}
-/#/ {
-    can_print=1
-    tmp=$0
-    sub(/# /, "", tmp)
-    comments[comments_idx]=tmp
-    comments_idx++
-}
-/^add/ {
-    if (can_print) {
-        split($2, parsed, "_")
-        rule_id=substr(parsed[2], 0, 7)
-        print rule_id "0"
-        for (i=0; i<comments_idx; ++i) {
-            print "\t" comments[i]
-        }
-        print "\n"
-    }
-    can_print=0
-}
-!/#/ {
-    comments_idx=0
-}
-EOF
-    gunzip -c "$PERSISTENT_IPSETS" | awk -f "$RULE_DESCRIPTION_AWK_FILE" - > "$RULE_DESCRIPTION_FILE"
-    rm -rf "$RULE_DESCRIPTION_AWK_FILE"
-}
 
 # Return md5 of a file the file should exist
 file_md5() {
@@ -301,6 +265,6 @@ fi
 update_file "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_IPSETS}" "${PERSISTENT_IPSETS}"
 
 # generate the rule description file
-generate_rule_description_file
+$(dirname $(readlink -f "$0"))/turris-description
 
 release_lockfile

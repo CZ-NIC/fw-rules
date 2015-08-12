@@ -649,6 +649,9 @@ apply_isets() {
         local count="$(grep '^add [^ ]*_4' ${TMP_IPSETS} | wc -l)"
         local count6="$(grep '^add [^ ]*_6' ${TMP_IPSETS} | wc -l)"
         logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded ($md5), ${override_count} rule(s) overriden, ${skip_count} rule(s) skipped"
+
+        # generate the rule description file
+        $(dirname $(readlink -f "$0"))/turris-description
     else
 
         load_empty_ipsets_to_iptables
