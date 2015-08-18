@@ -129,6 +129,8 @@ while [ -z "${WAN}" ]; do
         logger -t turris-firewall-rules -p err "(v${VERSION}) Unable to determine the WAN interface. Exiting..."
         release_lockfile
         exit 1
+    else
+        logger -t turris-firewall-rules -p info "(v${VERSION}) Using '${WAN}' as WAN interface"
     fi
 done
 
