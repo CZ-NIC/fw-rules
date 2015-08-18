@@ -98,21 +98,25 @@ PCAP_DIR="/var/log/turris-pcap"
 
 VERSION=0
 WAN=""
+WAN6=""
 
 while [ -z "${WAN}" ]; do
 
     # read wan from nikola
     config_load nikola
     config_get WAN main wan_ifname
-    [ -n "${WAN}" ] && break
+    config_get WAN6 main wan6_ifname
 
     # autodetect using default routes (taken from ucollect init script)
 
     # Look into the routing tables to guess WAN interfaces
     V4=$(route -n | sed -ne 's/ *$//;/^0\.0\.0\.0  *[0-9.][0-9.]*  *0\.0\.0\.0/s/.* //p')
     V6=$(route -n -A inet6 | sed -ne 's/ *$//;/^::\/0  /s/.* //p')
+
     # Unify them and remove duplicates
-    ALL=$(echo "$V4" "$V6" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
+    V4=$(echo "$V4" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
+    V6=$(echo "$V6" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
+
     IGNORE=$(uci -X show network | sed -ne 's/^network\.\([^.]*\)=interface$/\1/p' | while read iface ; do
         proto=$(uci get -q network.$iface.proto)
         name=$(echo "$proto-$iface" | head -c 15)
@@ -123,14 +127,24 @@ while [ -z "${WAN}" ]; do
             echo "$name"
         fi
     done)
-    WAN=$(get_wan "$ALL" "$IGNORE")
+
+    if [ -z "${WAN}" ]; then
+        WAN=$(get_wan "$V4" "$IGNORE")
+    fi
+    if [ -z "${WAN6}" ]; then
+        WAN6=$(get_wan "$V6" "$IGNORE")
+        if [ -z "${WAN6}" ]; then  # when WAN6 not set assign WAN as WAN6
+            WAN6=${WAN}
+        fi
+    fi
 
     if [ -z "${WAN}" ]; then
         logger -t turris-firewall-rules -p err "(v${VERSION}) Unable to determine the WAN interface. Exiting..."
         release_lockfile
         exit 1
     else
-        logger -t turris-firewall-rules -p info "(v${VERSION}) Using '${WAN}' as WAN interface"
+        logger -t turris-firewall-rules -p info "(v${VERSION}) IPv4 WAN interface used - '${WAN}'"
+        logger -t turris-firewall-rules -p info "(v${VERSION}) IPv6 WAN interface used - '${WAN6}'"
     fi
 done
 
@@ -526,34 +540,40 @@ load_ipsets_to_iptables() {
             nflog_local=$global_pcap_enabled
         fi
 
+        if [ "${ip_type}" = "6" ]; then
+            local wan_local=${WAN6}
+        else
+            local wan_local=${WAN}
+        fi
+
         if [ ! "$action" = "n" -a "$nflog_local" = "yes" ]; then
-            eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+            eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -o ${wan_local} -m set --match-set ${ipset_name_x} ${match} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
             if [ "$nflog_extensive_local" = "yes" ]; then
-                eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+                eval nflog_rules_${ip_type}=\"$(eval echo '$'nflog_rules_${ip_type})"-A ${nflog_chain_local} -i ${wan_local} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
             fi
             if [ "$nflog_dropped_local" =  "yes" ]; then
-                eval nflog_log_drop_${ip_type}=\"$(eval echo '$'nflog_log_drop_${ip_type})"-A turris-log-incoming -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
+                eval nflog_log_drop_${ip_type}=\"$(eval echo '$'nflog_log_drop_${ip_type})"-A turris-log-incoming -i ${wan_local} -m set --match-set ${ipset_name_x} ${match_src} -m comment --comment turris-nflog -j NFLOG --nflog-group $((1000 + $nflog_idx))\n"\"
             fi
         fi
 
         case "${action}" in
             "b")
-                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
-                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
+                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${wan_local} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
+                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${wan_local} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
                 ;;
             "l")
-                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-log-incoming -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-log-incoming -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
+                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${wan_local} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${wan_local} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-log-incoming -i ${wan_local} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-log-incoming -i ${wan_local} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
                 ;;
             "lb")
-                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-log-incoming -i ${WAN} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
-                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-log-incoming -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
-                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${WAN} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
-                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${WAN} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
+                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -o ${wan_local} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval log_rules_${ip_type}=\""$(eval echo '$'log_rules_${ip_type})"-A turris -i ${wan_local} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval reject_rules_${ip_type}=\""$(eval echo '$'reject_rules_${ip_type})"-A turris-log-incoming -i ${wan_local} -m limit --limit 1/sec -m set --match-set ${ipset_name_x} ${match_src} -j LOG --log-prefix \'turris-${rule_id}: \' --log-level debug\\n\"
+                eval return_rules_${ip_type}=\"$(eval echo '$'return_rules_${ip_type})"-A turris-log-incoming -i ${wan_local} -m set --match-set ${ipset_name_x} ${match_src} -j RETURN\n"\"
+                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -o ${wan_local} -m set --match-set ${ipset_name_x} ${match} -j DROP\n"\"
+                eval drop_rules_${ip_type}=\"$(eval echo '$'drop_rules_${ip_type})"-A turris -i ${wan_local} -m set --match-set ${ipset_name_x} ${match_src} -j DROP\n"\"
                 ;;
             "n")
                 skip_count=$(($skip_count + 1))
@@ -585,7 +605,7 @@ load_ipsets_to_iptables() {
     echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
     echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
     if [ $global_pcap_enabled = "yes" -a $global_nflog_other_dropped = "yes" ]; then
-        echo -e "-A turris-log-incoming -i ${WAN} -m comment --comment turris-nflog -j NFLOG --nflog-group 999" >> "${TMP_FILE6}.part"
+        echo -e "-A turris-log-incoming -i ${WAN6} -m comment --comment turris-nflog -j NFLOG --nflog-group 999" >> "${TMP_FILE6}.part"
     fi
     echo -e "" >> "${TMP_FILE6}.part"
     echo -e "${drop_rules_6}" >> "${TMP_FILE6}.part"
