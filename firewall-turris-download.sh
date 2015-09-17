@@ -99,6 +99,8 @@ TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
 CRL_FILE_PERSISTENT="/etc/ssl/crl.pem"
 CRL_FILE_TEMPORAL="/tmp/crl.pem"
 
+BIN_DIR="/usr/share/firewall"
+
 # Temporal crl file should be up-to date
 if [ -f "${CRL_FILE_TEMPORAL}" ]; then
     CRL_FILE="${CRL_FILE_TEMPORAL}"
@@ -265,6 +267,6 @@ fi
 update_file "${DOWNLOAD_IPSETS_SIGN}" "${DOWNLOAD_IPSETS}" "${PERSISTENT_IPSETS}"
 
 # generate the rule description file
-$(dirname $(readlink -f "$0"))/turris-description
+"${BIN_DIR}"/turris-description
 
 release_lockfile

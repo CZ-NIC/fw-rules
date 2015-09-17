@@ -95,6 +95,7 @@ PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets.gz"
 TMP_IPSETS="/tmp/turris-ipsets"
 ULOGD_FILE="/tmp/etc/ulogd-turris.conf"
 PCAP_DIR="/var/log/turris-pcap"
+BIN_DIR="/usr/share/firewall"
 
 VERSION=0
 WAN=""
@@ -673,7 +674,7 @@ apply_isets() {
         logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded ($md5), ${override_count} rule(s) overriden, ${skip_count} rule(s) skipped"
 
         # generate the rule description file
-        $(dirname $(readlink -f "$0"))/turris-description
+        "${BIN_DIR}"/turris-description
     else
 
         load_empty_ipsets_to_iptables
