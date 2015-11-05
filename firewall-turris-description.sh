@@ -48,14 +48,14 @@ BEGIN {
     comments=""
     comments_idx=0
 }
-/#/ {
+/# / {
     can_print=1
     tmp=$0
     sub(/# /, "", tmp)
     comments[comments_idx]=tmp
     comments_idx++
 }
-/^add/ {
+/^add|^#Create/ {
     if (can_print) {
         split($2, parsed, "_")
         rule_id=substr(parsed[2], 0, 7)
@@ -67,7 +67,13 @@ BEGIN {
     }
     can_print=0
 }
-!/#/ {
+/#INJECTED/ {
+    comments_idx=0
+}
+/#ENDINJECTED/ {
+    comments_idx=0
+}
+!/# / {
     comments_idx=0
 }
 EOF
