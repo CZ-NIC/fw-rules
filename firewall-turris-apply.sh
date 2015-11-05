@@ -155,6 +155,8 @@ remove_tmp_files() {
     rm -f "${TMP_FILE}.part"
     rm -f "${TMP_FILE6}.part"
     rm -f "${TMP_IPSETS}"
+    rm -f "${TMP_IPSETS}".head
+    rm -f "${TMP_IPSETS}".tail
 }
 
 # Return md5 of a file the file should exist
@@ -410,7 +412,7 @@ load_ipsets_to_iptables() {
 
     # Create all if exist swap otherwise rename append rules
     local old_names="$(ipset list | grep 'Name: turris_' | cut -d' ' -f2- | sort)"
-    local new_names="$(grep create ${TMP_IPSETS} | cut -d' ' -f2 | sort)"
+    local new_names="$(grep ^create ${TMP_IPSETS} | cut -d' ' -f2 | sort)"
 
     # load the overrides
     load_overrides
@@ -653,6 +655,19 @@ restore_iptables() {
     fi
 }
 
+test_injected_ipset() {
+    local line="$1"
+    if [ "${line:0:7}" = "#Create" ]; then
+        # change #Create ... -> create ..
+        line=$(echo "$line" | sed -e 's/#C/c/')
+        local name=$(echo "$line" | cut -d" " -f2)
+        ipset -q save "$name"_X | grep "create" | sed 's/_X//' | grep "$line" > /dev/null
+        if [ $? -eq 1 ]; then
+            echo "$line"
+        fi
+    fi
+}
+
 apply_isets() {
     if [ -f "${PERSISTENT_IPSETS}" ]; then
         # Unpack PERSISTENT_IPSETS
@@ -663,6 +678,26 @@ apply_isets() {
             release_lockfile
             exit 1
         fi
+
+        # Split ipset to header and body
+        cat "${TMP_IPSETS}" | grep '^create\|^#Create' > "${TMP_IPSETS}.head"
+        cat "${TMP_IPSETS}" | grep 'add' > "${TMP_IPSETS}.tail"
+        rm "${TMP_IPSETS}"
+
+        # Check injected ipsets
+        local line
+        while read line; do
+            if [ "${line:0:7}" = "#Create" ]; then
+                local inject_line=$(test_injected_ipset "$line")
+                if [ -n "$inject_line" ]; then
+                    echo "$inject_line" >> "${TMP_IPSETS}"
+                fi
+            else
+                echo "$line" >> "${TMP_IPSETS}"
+            fi
+        done < "${TMP_IPSETS}".head
+
+        cat "${TMP_IPSETS}".tail >> "${TMP_IPSETS}"
 
         load_ipsets_to_iptables
         store_iptables
