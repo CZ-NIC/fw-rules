@@ -690,6 +690,7 @@ apply_isets() {
             if [ "${line:0:7}" = "#Create" ]; then
                 local inject_line=$(test_injected_ipset "$line")
                 if [ -n "$inject_line" ]; then
+                    logger -t turris-firewall-rules -p info "(v${VERSION}) injected ipset loaded '${inject_line}'"
                     echo "$inject_line" >> "${TMP_IPSETS}"
                 fi
             else
@@ -706,7 +707,7 @@ apply_isets() {
         local md5=$(file_md5 "${PERSISTENT_IPSETS}")
         local count="$(grep '^add [^ ]*_4' ${TMP_IPSETS} | wc -l)"
         local count6="$(grep '^add [^ ]*_6' ${TMP_IPSETS} | wc -l)"
-        logger -t turris-firewall-rules "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded ($md5), ${override_count} rule(s) overriden, ${skip_count} rule(s) skipped"
+        logger -t turris-firewall-rules -p info "(v${VERSION}) ${count} ipv4 address(es) and ${count6} ipv6 address(es) were loaded ($md5), ${override_count} rule(s) overriden, ${skip_count} rule(s) skipped"
 
         # generate the rule description file
         "${BIN_DIR}"/turris-description
