@@ -463,29 +463,32 @@ load_ipsets_to_iptables() {
     local drop_rules_6=""
 
     # Create iptables rules
-    for ipset_name in ${new_names}; do
+    for ipset_name in ${new_names} ${existing_injected_sets}; do
         local rule_id="$(echo ${ipset_name} | cut -d_ -f2)"
         local action="$(echo ${ipset_name} | cut -d_ -f3)"
         local type="$(echo ${ipset_name} | cut -d_ -f4)"
         local ip_type="$(echo ${ipset_name} | cut -d_ -f5)"
         local ipset_name_x="${ipset_name}_X"
 
-        if [ "${old_names/${ipset_name_x}}" = "${old_names}" ]; then
-            # set is brand new -> rename
-            ipset rename "${ipset_name}" "${ipset_name_x}"
-        else
-            # set with is active -> swap and delete
-            if ipset swap "${ipset_name}" "${ipset_name_x}"; then
-                ipset destroy "${ipset_name}"
-            else
-                # When swap fails (This could happen when ipsets have a different type)
-                # destroy the original list and rename the new one
-                #
-                # atomicity is lost, but this should be a rare situation
-                logger -t turris-firewall-rules -p warn "(v${VERSION}) Need to flush turris iptable chain (Atomicity is lost)"
-                iptables -F turris  # can't destroy ipset which is used so we need to detele the iptable rules first
-                ipset destroy "${ipset_name_x}"
+        if [ "${existing_injected_sets/${ipset_name}}" = "${existing_injected_sets}" ]; then
+            # don't swithc existing injected sets
+            if [ "${old_names/${ipset_name_x}}" = "${old_names}" ]; then
+                # set is brand new -> rename
                 ipset rename "${ipset_name}" "${ipset_name_x}"
+            else
+                # set with is active -> swap and delete
+                if ipset swap "${ipset_name}" "${ipset_name_x}"; then
+                    ipset destroy "${ipset_name}"
+                else
+                    # When swap fails (This could happen when ipsets have a different type)
+                    # destroy the original list and rename the new one
+                    #
+                    # atomicity is lost, but this should be a rare situation
+                    logger -t turris-firewall-rules -p warn "(v${VERSION}) Need to flush turris iptable chain (Atomicity is lost)"
+                    iptables -F turris  # can't destroy ipset which is used so we need to detele the iptable rules first
+                    ipset destroy "${ipset_name_x}"
+                    ipset rename "${ipset_name}" "${ipset_name_x}"
+                fi
             fi
         fi
 
@@ -686,12 +689,16 @@ apply_isets() {
 
         # Check injected ipsets
         local line
+        existing_injected_sets=""
         while read line; do
             if [ "${line:0:7}" = "#Create" ]; then
                 local inject_line=$(test_injected_ipset "$line")
                 if [ -n "$inject_line" ]; then
                     logger -t turris-firewall-rules -p info "(v${VERSION}) injected ipset loaded '${inject_line}'"
                     echo "$inject_line" >> "${TMP_IPSETS}"
+                else
+                    # ipset is loaded but not created -> it needs to be added to separete list
+                    existing_injected_sets="${existing_injected_sets} $(echo ${line} | cut -d' ' -f2)"
                 fi
             else
                 echo "$line" >> "${TMP_IPSETS}"
