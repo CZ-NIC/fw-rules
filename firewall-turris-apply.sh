@@ -664,7 +664,7 @@ test_injected_ipset() {
         # change #Create ... -> create ..
         line=$(echo "$line" | sed -e 's/#C/c/')
         local name=$(echo "$line" | cut -d" " -f2)
-        ipset -q save "$name"_X | grep "create" | sed 's/_X//' | grep "$line" > /dev/null
+        ipset -q save "$name"_X > /dev/null
         if [ $? -eq 1 ]; then
             echo "$line"
         fi
