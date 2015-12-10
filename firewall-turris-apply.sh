@@ -119,7 +119,7 @@ while [ -z "${WAN}" ]; do
     V6=$(echo "$V6" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
 
     IGNORE=$(uci -X show network | sed -ne 's/^network\.\([^.]*\)=interface$/\1/p' | while read iface ; do
-        proto=$(uci get -q network.$iface.proto)
+        proto=$(uci -q get network.$iface.proto)
         name=$(echo "$proto-$iface" | head -c 15)
         # TODO: What about L2TP? #3093
         if [ "$proto" = "6in4" -o "$proto" = "6to4" -o "$proto" = "6rd" -o "$proto" = "dslite" ] ; then
