@@ -55,23 +55,21 @@ BEGIN {
     comments[comments_idx]=tmp
     comments_idx++
 }
-/^add|^#Create/ {
+/^add |^create |^#Create/ {
     if (can_print) {
         split($2, parsed, "_")
         rule_id=substr(parsed[2], 0, 7)
-        print rule_id "0"
-        for (i=0; i<comments_idx; ++i) {
-            print "\t" comments[i]
+        rule_id=rule_id "0"
+        if (!(rule_id in used)) {
+            print rule_id
+            for (i = 0; i < comments_idx; ++i) {
+                print "\t" comments[i]
+            }
+            print "\n"
+            used[rule_id] = true
         }
-        print "\n"
     }
     can_print=0
-}
-/#INJECTED/ {
-    comments_idx=0
-}
-/#ENDINJECTED/ {
-    comments_idx=0
 }
 !/# / {
     comments_idx=0
