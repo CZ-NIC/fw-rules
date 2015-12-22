@@ -661,13 +661,13 @@ restore_iptables() {
 test_injected_ipset() {
     local line="$1"
     if [ "${line:0:7}" = "#Create" ]; then
-        # change #Create ... -> create ..
+        # change #Create ... -> create ... if needed
         line=$(echo "$line" | sed -e 's/#C/c/')
-        local name=$(echo "$line" | cut -d" " -f2)
-        ipset -q save "$name"_X > /dev/null
-        if [ $? -eq 1 ]; then
-            echo "$line"
-        fi
+    fi
+    local name=$(echo "$line" | cut -d" " -f2)
+    ipset -q save "$name"_X > /dev/null
+    if [ $? -eq 1 ]; then
+        echo "$line"
     fi
 }
 
@@ -691,16 +691,19 @@ apply_isets() {
         local line
         existing_injected_sets=""
         while read line; do
-            if [ "${line:0:7}" = "#Create" ]; then
+            # Is this injected ipset? '#Create' for old format, 'create turris_1' for new format
+            if [ "${line:0:7}" = "#Create" -o "${line:0:15}" = "create turris_1" ]; then
+                # Injected ip set
                 local inject_line=$(test_injected_ipset "$line")
                 if [ -n "$inject_line" ]; then
                     logger -t turris-firewall-rules -p info "(v${VERSION}) injected ipset loaded '${inject_line}'"
                     echo "$inject_line" >> "${TMP_IPSETS}"
                 else
-                    # ipset is loaded but not created -> it needs to be added to separete list
+                    # ipset is loaded but not created -> it needs to be added to a separete list
                     existing_injected_sets="${existing_injected_sets} $(echo ${line} | cut -d' ' -f2)"
                 fi
             else
+                # Simply append non-injected
                 echo "$line" >> "${TMP_IPSETS}"
             fi
         done < "${TMP_IPSETS}".head
