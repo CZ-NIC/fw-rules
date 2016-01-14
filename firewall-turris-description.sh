@@ -31,8 +31,6 @@
 # as a part of Turris project (see https://www.turris.cz/)
 #
 
-. $IPKG_INSTROOT/lib/functions.sh
-
 # Enable debug
 if [ -n "${DEBUG}" ] ; then
     set -x

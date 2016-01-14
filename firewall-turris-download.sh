@@ -35,8 +35,6 @@
 # Related UCI config /etc/config/firewall-turris
 #
 
-. $IPKG_INSTROOT/lib/functions.sh
-
 LOCK_FILE="/tmp/turris-firewall-rules-download.lock"
 
 acquire_lockfile() {
