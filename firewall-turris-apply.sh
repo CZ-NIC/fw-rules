@@ -152,8 +152,6 @@ done
 remove_tmp_files() {
     rm -f "${TMP_FILE}"
     rm -f "${TMP_FILE6}"
-    rm -f "${TMP_FILE}.part"
-    rm -f "${TMP_FILE6}.part"
     rm -f "${TMP_IPSETS}"
     rm -f "${TMP_IPSETS}".head
     rm -f "${TMP_IPSETS}".tail
@@ -391,12 +389,36 @@ ulogd_restart() {
     md5sum "${ULOGD_FILE}" > "${ULOGD_FILE}.md5"
 }
 
+merge_turris_chain() {
+    local source_chain="$1"
+    local target_chain="$2"
+
+    #ipv4
+    if ! iptables -C "${source_chain}" -j "${target_chain}" 2>/dev/null ; then
+        iptables -I "${source_chain}" -j "${target_chain}"
+    fi
+
+    #ipv6
+    if ! ip6tables -C "${source_chain}" -j "${target_chain}" 2>/dev/null ; then
+        ip6tables -I "${source_chain}" -j "${target_chain}"
+    fi
+}
+
+merge_turris_chains() {
+    merge_turris_chain "accept" "turris"
+    merge_turris_chain "forwarding_rule" "turris-nflog"
+    merge_turris_chain "input_rule" "turris-nflog"
+    merge_turris_chain "output_rule" "turris-nflog"
+    merge_turris_chain "reject" "turris-log-incoming"
+    merge_turris_chain "drop" "turris-log-incoming"
+}
+
 load_ipsets_to_iptables() {
     # Append header to files
-    echo ':turris - [0:0]' > "${TMP_FILE}.part"
-    echo ':turris - [0:0]' > "${TMP_FILE6}.part"
-    eval echo "-I accept -j turris" >> "${TMP_FILE}.part"
-    eval echo "-I accept -j turris" >> "${TMP_FILE6}.part"
+    echo "*filter" > "${TMP_FILE}"
+    echo "*filter" > "${TMP_FILE6}"
+    echo ":turris - [0:0]" >> "${TMP_FILE}"
+    echo ":turris - [0:0]" >> "${TMP_FILE6}"
 
     skip_count=0
     override_count=0
@@ -434,22 +456,12 @@ load_ipsets_to_iptables() {
     fi
 
     # add a new chain for extensive pcap logging
-    echo ':turris-nflog - [0:0]' >> "${TMP_FILE}.part"
-    echo ':turris-nflog - [0:0]' >> "${TMP_FILE6}.part"
-    echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE}.part"
-    echo "-I forwarding_rule -j turris-nflog" >> "${TMP_FILE6}.part"
-    echo "-I input_rule -j turris-nflog" >> "${TMP_FILE}.part"
-    echo "-I input_rule -j turris-nflog" >> "${TMP_FILE6}.part"
-    echo "-I output_rule -j turris-nflog" >> "${TMP_FILE}.part"
-    echo "-I output_rule -j turris-nflog" >> "${TMP_FILE6}.part"
+    echo ':turris-nflog - [0:0]' >> "${TMP_FILE}"
+    echo ':turris-nflog - [0:0]' >> "${TMP_FILE6}"
 
     # add a new chain for storing dropped packets which match issued with a propper ID
-    echo ':turris-log-incoming - [0:0]' >> "${TMP_FILE}.part"
-    echo ':turris-log-incoming - [0:0]' >> "${TMP_FILE6}.part"
-    echo "-I reject -j turris-log-incoming" >> "${TMP_FILE}.part"
-    echo "-I reject -j turris-log-incoming" >> "${TMP_FILE6}.part"
-    echo "-I drop -j turris-log-incoming" >> "${TMP_FILE}.part"
-    echo "-I drop -j turris-log-incoming" >> "${TMP_FILE6}.part"
+    echo ':turris-log-incoming - [0:0]' >> "${TMP_FILE}"
+    echo ':turris-log-incoming - [0:0]' >> "${TMP_FILE6}"
 
     # restart ulogd to reinit configuration
     ulogd_restart
@@ -591,66 +603,57 @@ load_ipsets_to_iptables() {
         fi
     done
 
-    echo -e "${nflog_rules_4}" >> "${TMP_FILE}.part"
-    echo -e "${nflog_rules_6}" >> "${TMP_FILE6}.part"
+    echo -e "${nflog_rules_4}" >> "${TMP_FILE}"
+    echo -e "${nflog_rules_6}" >> "${TMP_FILE6}"
 
     # iptables-restore does not like ' character
-    echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
-    echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
-    echo -e "${nflog_log_drop_4}" >> "${TMP_FILE}.part"
-    echo -e "${return_rules_4}" | tr \' \" >> "${TMP_FILE}.part"
-    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
+    echo -e "${log_rules_4}" | tr \' \" >> "${TMP_FILE}"
+    echo -e "${reject_rules_4}" | tr \' \" >> "${TMP_FILE}"
+    echo -e "${nflog_log_drop_4}" >> "${TMP_FILE}"
+    echo -e "${return_rules_4}" | tr \' \" >> "${TMP_FILE}"
+    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}"
     if [ $global_pcap_enabled = "yes" -a $global_nflog_other_dropped = "yes" ]; then
-        echo -e "-A turris-log-incoming -i ${WAN} -m comment --comment turris-nflog -j NFLOG --nflog-group 999" >> "${TMP_FILE}.part"
+        echo -e "-A turris-log-incoming -i ${WAN} -m comment --comment turris-nflog -j NFLOG --nflog-group 999" >> "${TMP_FILE}"
     fi
-    echo -e "${drop_rules_4}" >> "${TMP_FILE}.part"
+    echo -e "${drop_rules_4}" >> "${TMP_FILE}"
 
-    echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
-    echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
-    echo -e "${nflog_log_drop_6}" >> "${TMP_FILE6}.part"
-    echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}.part"
-    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
+    echo -e "${log_rules_6}" | tr \' \" >> "${TMP_FILE6}"
+    echo -e "${reject_rules_6}" | tr \' \" >> "${TMP_FILE6}"
+    echo -e "${nflog_log_drop_6}" >> "${TMP_FILE6}"
+    echo -e "${return_rules_6}" | tr \' \" >> "${TMP_FILE6}"
+    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}"
     if [ $global_pcap_enabled = "yes" -a $global_nflog_other_dropped = "yes" ]; then
-        echo -e "-A turris-log-incoming -i ${WAN6} -m comment --comment turris-nflog -j NFLOG --nflog-group 999" >> "${TMP_FILE6}.part"
+        echo -e "-A turris-log-incoming -i ${WAN6} -m comment --comment turris-nflog -j NFLOG --nflog-group 999" >> "${TMP_FILE6}"
     fi
-    echo -e "" >> "${TMP_FILE6}.part"
-    echo -e "${drop_rules_6}" >> "${TMP_FILE6}.part"
+    echo -e "" >> "${TMP_FILE6}"
+    echo -e "${drop_rules_6}" >> "${TMP_FILE6}"
 
     # Add the commit
-    echo COMMIT >> "${TMP_FILE}.part"
-    echo COMMIT >> "${TMP_FILE6}.part"
+    echo COMMIT >> "${TMP_FILE}"
+    echo COMMIT >> "${TMP_FILE6}"
 }
 
 load_empty_ipsets_to_iptables() {
-    echo ":turris-log-incoming - [0:0]" > "${TMP_FILE}.part"
-    echo ":turris-log-incoming - [0:0]" > "${TMP_FILE6}.part"
-    echo "-I reject -j turris-log-incoming" >> "${TMP_FILE}.part"
-    echo "-I reject -j turris-log-incoming" >> "${TMP_FILE6}.part"
-    echo "-I drop -j turris-log-incoming" >> "${TMP_FILE}.part"
-    echo "-I drop -j turris-log-incoming" >> "${TMP_FILE6}.part"
-    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}.part"
-    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}.part"
-    echo COMMIT >> "${TMP_FILE}.part"
-    echo COMMIT >> "${TMP_FILE6}.part"
-}
-
-store_iptables() {
-    # Don't any turris related rules and COMMIT
-    iptables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE}"
-    ip6tables-save -t filter | grep -v '\-j turris' | grep -v '^-. turris' | grep -v '^:turris' | grep -v COMMIT > "${TMP_FILE6}"
+    echo "*filter" > "${TMP_FILE}"
+    echo "*filter" > "${TMP_FILE6}"
+    echo ":turris - [0:0]" >> "${TMP_FILE}"
+    echo ":turris - [0:0]" >> "${TMP_FILE6}"
+    echo ":turris-log-incoming - [0:0]" >> "${TMP_FILE}"
+    echo ":turris-log-incoming - [0:0]" >> "${TMP_FILE6}"
+    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE6}"
+    echo -e "-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix \"turris-00000000: \" --log-level 7" >> "${TMP_FILE}"
+    echo COMMIT >> "${TMP_FILE}"
+    echo COMMIT >> "${TMP_FILE6}"
 }
 
 restore_iptables() {
-    cat "${TMP_FILE}.part" >> "${TMP_FILE}"
-    cat "${TMP_FILE6}.part" >> "${TMP_FILE6}"
-
-    iptables-restore -T filter < "${TMP_FILE}"
+    iptables-restore -n -T filter < "${TMP_FILE}"
     if [ $? -eq 1 ]; then
         logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv4 rules"
         release_lockfile
         exit 1
     fi
-    ip6tables-restore -T filter < "${TMP_FILE6}"
+    ip6tables-restore -n -T filter < "${TMP_FILE6}"
     if [ $? -eq 1 ]; then
         logger -t turris-firewall-rules -p err "(v${VERSION}) Failed to load downloaded ipv6 rules"
         release_lockfile
@@ -711,8 +714,8 @@ apply_isets() {
         cat "${TMP_IPSETS}".tail >> "${TMP_IPSETS}"
 
         load_ipsets_to_iptables
-        store_iptables
         restore_iptables
+        merge_turris_chains
 
         local md5=$(file_md5 "${PERSISTENT_IPSETS}")
         local count="$(grep '^add [^ ]*_4' ${TMP_IPSETS} | wc -l)"
@@ -724,8 +727,8 @@ apply_isets() {
     else
 
         load_empty_ipsets_to_iptables
-        store_iptables
         restore_iptables
+        merge_turris_chains
 
         logger -t turris-firewall-rules "(v${VERSION}) Turris rules haven't been downloaded from the server yet."
     fi
