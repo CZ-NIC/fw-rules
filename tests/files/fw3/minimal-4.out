@@ -1,0 +1,99 @@
+iptables -t filter -P INPUT DROP
+iptables -t filter -P OUTPUT DROP
+iptables -t filter -P FORWARD DROP
+iptables -t filter -N delegate_input
+iptables -t filter -N delegate_output
+iptables -t filter -N delegate_forward
+iptables -t filter -N reject
+iptables -t filter -N drop
+iptables -t filter -N accept
+iptables -t filter -N zone_lan_input
+iptables -t filter -N zone_lan_output
+iptables -t filter -N zone_lan_forward
+iptables -t filter -N zone_lan_src_DROP
+iptables -t filter -N zone_lan_dest_DROP
+iptables -t filter -N zone_wan_input
+iptables -t filter -N zone_wan_output
+iptables -t filter -N zone_wan_forward
+iptables -t filter -N zone_wan_src_DROP
+iptables -t filter -N zone_wan_dest_accept
+iptables -t filter -N zone_wan_dest_DROP
+iptables -t filter -D INPUT -j delegate_input
+iptables -t filter -A INPUT -j delegate_input
+iptables -t filter -D OUTPUT -j delegate_output
+iptables -t filter -A OUTPUT -j delegate_output
+iptables -t filter -D FORWARD -j delegate_forward
+iptables -t filter -A FORWARD -j delegate_forward
+iptables -t filter -A delegate_input -i lo -j ACCEPT
+iptables -t filter -A delegate_output -o lo -j ACCEPT
+iptables -t filter -A delegate_input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A delegate_output -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A delegate_forward -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A reject -p tcp -j REJECT --reject-with tcp-reset
+iptables -t filter -A reject -j REJECT --reject-with icmp-port-unreachable
+iptables -t filter -A drop -j DROP
+iptables -t filter -A accept -j ACCEPT
+iptables -t filter -A zone_lan_forward -m comment --comment "forwarding lan -> wan" -j zone_wan_dest_accept
+iptables -t filter -A zone_lan_input -j zone_lan_src_DROP
+iptables -t filter -A zone_lan_forward -j zone_lan_dest_DROP
+iptables -t filter -A zone_lan_output -j zone_lan_dest_DROP
+iptables -t filter -A zone_lan_src_DROP -i br-lan -j drop
+iptables -t filter -A zone_lan_dest_DROP -o br-lan -j drop
+iptables -t filter -D delegate_input -i br-lan -j zone_lan_input
+iptables -t filter -A delegate_input -i br-lan -j zone_lan_input
+iptables -t filter -D delegate_output -o br-lan -j zone_lan_output
+iptables -t filter -A delegate_output -o br-lan -j zone_lan_output
+iptables -t filter -D delegate_forward -i br-lan -j zone_lan_forward
+iptables -t filter -A delegate_forward -i br-lan -j zone_lan_forward
+iptables -t filter -A zone_wan_input -j zone_wan_src_DROP
+iptables -t filter -A zone_wan_forward -j zone_wan_dest_DROP
+iptables -t filter -A zone_wan_output -j zone_wan_dest_DROP
+iptables -t filter -D zone_wan_dest_accept -o eth2 -j accept
+iptables -t filter -A zone_wan_dest_accept -o eth2 -j accept
+iptables -t filter -A zone_wan_src_DROP -i eth2 -j drop
+iptables -t filter -D zone_wan_dest_DROP -o eth2 -j drop
+iptables -t filter -A zone_wan_dest_DROP -o eth2 -j drop
+iptables -t filter -D delegate_input -i eth2 -j zone_wan_input
+iptables -t filter -A delegate_input -i eth2 -j zone_wan_input
+iptables -t filter -D delegate_output -o eth2 -j zone_wan_output
+iptables -t filter -A delegate_output -o eth2 -j zone_wan_output
+iptables -t filter -D delegate_forward -i eth2 -j zone_wan_forward
+iptables -t filter -A delegate_forward -i eth2 -j zone_wan_forward
+iptables -t filter -D zone_wan_dest_accept -o eth2 -j accept
+iptables -t filter -A zone_wan_dest_accept -o eth2 -j accept
+iptables -t filter -D zone_wan_src_DROP -i eth2 -j drop
+iptables -t filter -A zone_wan_src_DROP -i eth2 -j drop
+iptables -t filter -D zone_wan_dest_DROP -o eth2 -j drop
+iptables -t filter -A zone_wan_dest_DROP -o eth2 -j drop
+iptables -t filter -D delegate_input -i eth2 -j zone_wan_input
+iptables -t filter -A delegate_input -i eth2 -j zone_wan_input
+iptables -t filter -D delegate_output -o eth2 -j zone_wan_output
+iptables -t filter -A delegate_output -o eth2 -j zone_wan_output
+iptables -t filter -D delegate_forward -i eth2 -j zone_wan_forward
+iptables -t filter -A delegate_forward -i eth2 -j zone_wan_forward
+iptables -t filter -A delegate_input -j drop
+iptables -t filter -A delegate_output -j drop
+iptables -t filter -A delegate_forward -j drop
+iptables -t nat -N delegate_prerouting
+iptables -t nat -N delegate_postrouting
+iptables -t nat -D PREROUTING -j delegate_prerouting
+iptables -t nat -A PREROUTING -j delegate_prerouting
+iptables -t nat -D POSTROUTING -j delegate_postrouting
+iptables -t nat -A POSTROUTING -j delegate_postrouting
+iptables -t mangle -N mssfix
+iptables -t mangle -N fwmark
+iptables -t mangle -D FORWARD -j mssfix
+iptables -t mangle -A FORWARD -j mssfix
+iptables -t mangle -D PREROUTING -j fwmark
+iptables -t mangle -A PREROUTING -j fwmark
+iptables -t raw -N delegate_notrack
+iptables -t raw -N zone_lan_notrack
+iptables -t raw -N zone_wan_notrack
+iptables -t raw -D PREROUTING -j delegate_notrack
+iptables -t raw -A PREROUTING -j delegate_notrack
+iptables -t raw -A zone_lan_notrack -j CT --notrack
+iptables -t raw -A delegate_notrack -i br-lan -j zone_lan_notrack
+iptables -t raw -A zone_wan_notrack -j CT --notrack
+iptables -t raw -A delegate_notrack -i eth2 -j zone_wan_notrack
+iptables -t raw -D delegate_notrack -i eth2 -j zone_wan_notrack
+iptables -t raw -A delegate_notrack -i eth2 -j zone_wan_notrack

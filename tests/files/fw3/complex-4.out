@@ -1,0 +1,118 @@
+iptables -t filter -P INPUT DROP
+iptables -t filter -P OUTPUT DROP
+iptables -t filter -P FORWARD DROP
+iptables -t filter -N delegate_input
+iptables -t filter -N delegate_output
+iptables -t filter -N delegate_forward
+iptables -t filter -N reject
+iptables -t filter -N drop
+iptables -t filter -N accept
+iptables -t filter -N input_rule
+iptables -t filter -N output_rule
+iptables -t filter -N forwarding_rule
+iptables -t filter -N syn_flood
+iptables -t filter -N zone_lan_input
+iptables -t filter -N zone_lan_output
+iptables -t filter -N zone_lan_forward
+iptables -t filter -N zone_lan_src_REJECT
+iptables -t filter -N zone_lan_src_DROP
+iptables -t filter -N zone_lan_dest_accept
+iptables -t filter -N zone_lan_dest_DROP
+iptables -t filter -N input_lan_rule
+iptables -t filter -N output_lan_rule
+iptables -t filter -N forwarding_lan_rule
+iptables -t filter -A zone_lan_input -m comment --comment "user chain for input" -j input_lan_rule
+iptables -t filter -A zone_lan_output -m comment --comment "user chain for output" -j output_lan_rule
+iptables -t filter -A zone_lan_forward -m comment --comment "user chain for forwarding" -j forwarding_lan_rule
+iptables -t filter -N zone_wan_input
+iptables -t filter -N zone_wan_output
+iptables -t filter -N zone_wan_forward
+iptables -t filter -N zone_wan_src_DROP
+iptables -t filter -N zone_wan_dest_accept
+iptables -t filter -N zone_wan_dest_DROP
+iptables -t filter -N input_wan_rule
+iptables -t filter -N output_wan_rule
+iptables -t filter -N forwarding_wan_rule
+iptables -t filter -A zone_wan_input -m comment --comment "user chain for input" -j input_wan_rule
+iptables -t filter -A zone_wan_output -m comment --comment "user chain for output" -j output_wan_rule
+iptables -t filter -A zone_wan_forward -m comment --comment "user chain for forwarding" -j forwarding_wan_rule
+iptables -t filter -D INPUT -j delegate_input
+iptables -t filter -A INPUT -j delegate_input
+iptables -t filter -D OUTPUT -j delegate_output
+iptables -t filter -A OUTPUT -j delegate_output
+iptables -t filter -D FORWARD -j delegate_forward
+iptables -t filter -A FORWARD -j delegate_forward
+iptables -t filter -A delegate_input -i lo -j ACCEPT
+iptables -t filter -A delegate_output -o lo -j ACCEPT
+iptables -t filter -A delegate_input -m comment --comment "user chain for input" -j input_rule
+iptables -t filter -A delegate_output -m comment --comment "user chain for output" -j output_rule
+iptables -t filter -A delegate_forward -m comment --comment "user chain for forwarding" -j forwarding_rule
+iptables -t filter -A delegate_input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A delegate_input -m conntrack --ctstate INVALID -j DROP
+iptables -t filter -A delegate_output -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A delegate_output -m conntrack --ctstate INVALID -j DROP
+iptables -t filter -A delegate_forward -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+iptables -t filter -A delegate_forward -m conntrack --ctstate INVALID -j DROP
+iptables -t filter -A syn_flood -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -m limit --limit 1000/min --limit-burst 1000 -j RETURN
+iptables -t filter -A syn_flood -j DROP
+iptables -t filter -A delegate_input -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j syn_flood
+iptables -t filter -A reject -p tcp -j REJECT --reject-with tcp-reset
+iptables -t filter -A reject -j REJECT --reject-with icmp-port-unreachable
+iptables -t filter -A drop -j DROP
+iptables -t filter -A accept -j ACCEPT
+iptables -t filter -A zone_lan_input -p tcp -s 192.168.0.2/255.255.255.255 -m comment --comment "@rule[3]" -j accept
+iptables -t filter -A zone_lan_input -p icmp -s 192.168.0.3/255.255.255.255 -m icmp --icmp-type any -m comment --comment "@rule[4]" -j zone_lan_src_REJECT
+iptables -t filter -A zone_lan_input -p icmp -m icmp --icmp-type 3/5 -m comment --comment "@rule[5]" -j zone_lan_src_REJECT
+iptables -t filter -A zone_wan_input -p icmp -m icmp --icmp-type 0 -m comment --comment "@rule[6]" -j reject
+iptables -t filter -A zone_wan_forward -m comment --comment "forwarding wan -> lan" -j zone_lan_dest_accept
+iptables -t filter -A zone_lan_input -m conntrack --ctstate DNAT -m comment --comment "Accept port redirections" -j accept
+iptables -t filter -A zone_lan_forward -m conntrack --ctstate DNAT -m comment --comment "Accept port forwards" -j accept
+iptables -t filter -A zone_lan_input -j zone_lan_src_DROP
+iptables -t filter -A zone_lan_forward -j zone_lan_dest_DROP
+iptables -t filter -A zone_lan_output -j zone_lan_dest_DROP
+iptables -t filter -A zone_lan_src_REJECT -m limit --limit 100/min -j LOG --log-prefix "REJECT(src lan)"
+iptables -t filter -A zone_lan_src_DROP -m limit --limit 100/min -j LOG --log-prefix "DROP(src lan)"
+iptables -t filter -A zone_lan_dest_DROP -m limit --limit 100/min -j LOG --log-prefix "DROP(dest lan)"
+iptables -t filter -A zone_wan_input -m conntrack --ctstate DNAT -m comment --comment "Accept port redirections" -j accept
+iptables -t filter -A zone_wan_forward -m conntrack --ctstate DNAT -m comment --comment "Accept port forwards" -j accept
+iptables -t filter -A zone_wan_input -j zone_wan_src_DROP
+iptables -t filter -A zone_wan_forward -j zone_wan_dest_DROP
+iptables -t filter -A zone_wan_output -j zone_wan_dest_DROP
+iptables -t filter -A delegate_input -j drop
+iptables -t filter -A delegate_output -j drop
+iptables -t filter -A delegate_forward -j drop
+iptables -t nat -N delegate_prerouting
+iptables -t nat -N delegate_postrouting
+iptables -t nat -N prerouting_rule
+iptables -t nat -N postrouting_rule
+iptables -t nat -N zone_lan_postrouting
+iptables -t nat -N zone_lan_prerouting
+iptables -t nat -N prerouting_lan_rule
+iptables -t nat -N postrouting_lan_rule
+iptables -t nat -A zone_lan_prerouting -m comment --comment "user chain for prerouting" -j prerouting_lan_rule
+iptables -t nat -A zone_lan_postrouting -m comment --comment "user chain for postrouting" -j postrouting_lan_rule
+iptables -t nat -N zone_wan_postrouting
+iptables -t nat -N zone_wan_prerouting
+iptables -t nat -N prerouting_wan_rule
+iptables -t nat -N postrouting_wan_rule
+iptables -t nat -A zone_wan_prerouting -m comment --comment "user chain for prerouting" -j prerouting_wan_rule
+iptables -t nat -A zone_wan_postrouting -m comment --comment "user chain for postrouting" -j postrouting_wan_rule
+iptables -t nat -D PREROUTING -j delegate_prerouting
+iptables -t nat -A PREROUTING -j delegate_prerouting
+iptables -t nat -D POSTROUTING -j delegate_postrouting
+iptables -t nat -A POSTROUTING -j delegate_postrouting
+iptables -t nat -A delegate_prerouting -m comment --comment "user chain for prerouting" -j prerouting_rule
+iptables -t nat -A delegate_postrouting -m comment --comment "user chain for postrouting" -j postrouting_rule
+iptables -t nat -A zone_lan_postrouting -s 192.168.5.0/255.255.255.0 -d 192.168.4.0/255.255.255.0 -j MASQUERADE
+iptables -t mangle -N mssfix
+iptables -t mangle -N fwmark
+iptables -t mangle -D FORWARD -j mssfix
+iptables -t mangle -A FORWARD -j mssfix
+iptables -t mangle -D PREROUTING -j fwmark
+iptables -t mangle -A PREROUTING -j fwmark
+iptables -t mangle -A fwmark -p tcp -s 192.168.8.101/255.255.255.255 -m mark --mark 0x3 -m comment --comment "@rule[1]" -j MARK --set-xmark 0xaaaaaaa/0xffffffff
+iptables -t mangle -A mssfix -p tcp -o eth0 -d 192.168.0.0/255.255.0.0 -m tcp --tcp-flags SYN,RST SYN -m comment --comment "lan (mtu_fix)" -j TCPMSS --clamp-mss-to-pmtu
+iptables -t mangle -A mssfix -p tcp -o br-lan -d 192.168.0.0/255.255.0.0 -m tcp --tcp-flags SYN,RST SYN -m comment --comment "lan (mtu_fix)" -j TCPMSS --clamp-mss-to-pmtu
+iptables -t raw -N delegate_notrack
+iptables -t raw -D PREROUTING -j delegate_notrack
+iptables -t raw -A PREROUTING -j delegate_notrack

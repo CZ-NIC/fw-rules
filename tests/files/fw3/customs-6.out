@@ -1,0 +1,106 @@
+ip6tables -t filter -P INPUT DROP
+ip6tables -t filter -P OUTPUT DROP
+ip6tables -t filter -P FORWARD DROP
+ip6tables -t filter -N delegate_input
+ip6tables -t filter -N delegate_output
+ip6tables -t filter -N delegate_forward
+ip6tables -t filter -N reject
+ip6tables -t filter -N drop
+ip6tables -t filter -N accept
+ip6tables -t filter -N syn_flood
+ip6tables -t filter -N zone_lan_input
+ip6tables -t filter -N zone_lan_output
+ip6tables -t filter -N zone_lan_forward
+ip6tables -t filter -N zone_lan_src_DROP
+ip6tables -t filter -N zone_lan_dest_DROP
+ip6tables -t filter -N zone_wan_input
+ip6tables -t filter -N zone_wan_output
+ip6tables -t filter -N zone_wan_forward
+ip6tables -t filter -N zone_wan_src_DROP
+ip6tables -t filter -N zone_wan_dest_accept
+ip6tables -t filter -N zone_wan_dest_DROP
+ip6tables -t filter -D INPUT -j delegate_input
+ip6tables -t filter -A INPUT -j delegate_input
+ip6tables -t filter -D OUTPUT -j delegate_output
+ip6tables -t filter -A OUTPUT -j delegate_output
+ip6tables -t filter -D FORWARD -j delegate_forward
+ip6tables -t filter -A FORWARD -j delegate_forward
+ip6tables -t filter -A delegate_input -i lo -j ACCEPT
+ip6tables -t filter -A delegate_output -o lo -j ACCEPT
+ip6tables -t filter -A delegate_input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+ip6tables -t filter -A delegate_input -m conntrack --ctstate INVALID -m limit --limit 102/min -j LOG --log-prefix CUSTOM2 --log-level 2
+ip6tables -t filter -A delegate_input -m conntrack --ctstate INVALID -j DROP
+ip6tables -t filter -A delegate_output -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+ip6tables -t filter -A delegate_output -m conntrack --ctstate INVALID -m limit --limit 102/min -j LOG --log-prefix CUSTOM2 --log-level 2
+ip6tables -t filter -A delegate_output -m conntrack --ctstate INVALID -j DROP
+ip6tables -t filter -A delegate_forward -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+ip6tables -t filter -A delegate_forward -m conntrack --ctstate INVALID -m limit --limit 102/min -j LOG --log-prefix CUSTOM2 --log-level 2
+ip6tables -t filter -A delegate_forward -m conntrack --ctstate INVALID -j DROP
+ip6tables -t filter -A syn_flood -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -m limit --limit 1000/min --limit-burst 1000 -j RETURN
+ip6tables -t filter -A syn_flood -m limit --limit 101/min -j LOG --log-prefix CUSTOM1 --log-level 1
+ip6tables -t filter -A syn_flood -j DROP
+ip6tables -t filter -A delegate_input -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j syn_flood
+ip6tables -t filter -A reject -p tcp -j REJECT --reject-with tcp-reset
+ip6tables -t filter -A reject -j REJECT --reject-with icmp6-port-unreachable
+ip6tables -t filter -A drop -j DROP
+ip6tables -t filter -A accept -j ACCEPT
+ip6tables -t filter -A zone_lan_forward -m comment --comment "forwarding lan -> wan" -j zone_wan_dest_accept
+ip6tables -t filter -A zone_lan_input -j zone_lan_src_DROP
+ip6tables -t filter -A zone_lan_forward -j zone_lan_dest_DROP
+ip6tables -t filter -A zone_lan_output -j zone_lan_dest_DROP
+ip6tables -t filter -A zone_lan_src_DROP -m limit --limit 103/min --limit-burst 1003 -j LOG --log-prefix CUSTOM3 --log-level 3
+ip6tables -t filter -A zone_lan_dest_DROP -m limit --limit 103/min --limit-burst 1003 -j LOG --log-prefix CUSTOM3 --log-level 3
+ip6tables -t filter -A zone_lan_src_DROP -i br-lan -j drop
+ip6tables -t filter -A zone_lan_dest_DROP -o br-lan -j drop
+ip6tables -t filter -D delegate_input -i br-lan -j zone_lan_input
+ip6tables -t filter -A delegate_input -i br-lan -j zone_lan_input
+ip6tables -t filter -D delegate_output -o br-lan -j zone_lan_output
+ip6tables -t filter -A delegate_output -o br-lan -j zone_lan_output
+ip6tables -t filter -D delegate_forward -i br-lan -j zone_lan_forward
+ip6tables -t filter -A delegate_forward -i br-lan -j zone_lan_forward
+ip6tables -t filter -A zone_wan_input -j zone_wan_src_DROP
+ip6tables -t filter -A zone_wan_forward -j zone_wan_dest_DROP
+ip6tables -t filter -A zone_wan_output -j zone_wan_dest_DROP
+ip6tables -t filter -D zone_wan_dest_accept -o eth2 -j accept
+ip6tables -t filter -A zone_wan_dest_accept -o eth2 -j accept
+ip6tables -t filter -A zone_wan_src_DROP -i eth2 -j drop
+ip6tables -t filter -D zone_wan_dest_DROP -o eth2 -j drop
+ip6tables -t filter -A zone_wan_dest_DROP -o eth2 -j drop
+ip6tables -t filter -D delegate_input -i eth2 -j zone_wan_input
+ip6tables -t filter -A delegate_input -i eth2 -j zone_wan_input
+ip6tables -t filter -D delegate_output -o eth2 -j zone_wan_output
+ip6tables -t filter -A delegate_output -o eth2 -j zone_wan_output
+ip6tables -t filter -D delegate_forward -i eth2 -j zone_wan_forward
+ip6tables -t filter -A delegate_forward -i eth2 -j zone_wan_forward
+ip6tables -t filter -D zone_wan_dest_accept -o eth2 -j accept
+ip6tables -t filter -A zone_wan_dest_accept -o eth2 -j accept
+ip6tables -t filter -D zone_wan_src_DROP -i eth2 -j drop
+ip6tables -t filter -A zone_wan_src_DROP -i eth2 -j drop
+ip6tables -t filter -D zone_wan_dest_DROP -o eth2 -j drop
+ip6tables -t filter -A zone_wan_dest_DROP -o eth2 -j drop
+ip6tables -t filter -D delegate_input -i eth2 -j zone_wan_input
+ip6tables -t filter -A delegate_input -i eth2 -j zone_wan_input
+ip6tables -t filter -D delegate_output -o eth2 -j zone_wan_output
+ip6tables -t filter -A delegate_output -o eth2 -j zone_wan_output
+ip6tables -t filter -D delegate_forward -i eth2 -j zone_wan_forward
+ip6tables -t filter -A delegate_forward -i eth2 -j zone_wan_forward
+ip6tables -t filter -A delegate_input -j drop
+ip6tables -t filter -A delegate_output -j drop
+ip6tables -t filter -A delegate_forward -j drop
+ip6tables -t nat -N delegate_prerouting
+ip6tables -t nat -N delegate_postrouting
+ip6tables -t nat -D PREROUTING -j delegate_prerouting
+ip6tables -t nat -A PREROUTING -j delegate_prerouting
+ip6tables -t nat -D POSTROUTING -j delegate_postrouting
+ip6tables -t nat -A POSTROUTING -j delegate_postrouting
+ip6tables -t mangle -N mssfix
+ip6tables -t mangle -N fwmark
+ip6tables -t mangle -D FORWARD -j mssfix
+ip6tables -t mangle -A FORWARD -j mssfix
+ip6tables -t mangle -D PREROUTING -j fwmark
+ip6tables -t mangle -A PREROUTING -j fwmark
+ip6tables -t mangle -A mssfix -p tcp -o br-lan -m tcp --tcp-flags SYN,RST SYN -m limit --limit 1005/min -m comment --comment "lan (mtu_fix logging)" -j LOG --log-prefix CUSTOM4 --log-level 5
+ip6tables -t mangle -A mssfix -p tcp -o br-lan -m tcp --tcp-flags SYN,RST SYN -m comment --comment "lan (mtu_fix)" -j TCPMSS --clamp-mss-to-pmtu
+ip6tables -t raw -N delegate_notrack
+ip6tables -t raw -D PREROUTING -j delegate_notrack
+ip6tables -t raw -A PREROUTING -j delegate_notrack

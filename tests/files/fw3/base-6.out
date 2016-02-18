@@ -1,0 +1,177 @@
+ip6tables -t filter -P INPUT accept
+ip6tables -t filter -P OUTPUT accept
+ip6tables -t filter -P FORWARD DROP
+ip6tables -t filter -N delegate_input
+ip6tables -t filter -N delegate_output
+ip6tables -t filter -N delegate_forward
+ip6tables -t filter -N reject
+ip6tables -t filter -N drop
+ip6tables -t filter -N accept
+ip6tables -t filter -N input_rule
+ip6tables -t filter -N output_rule
+ip6tables -t filter -N forwarding_rule
+ip6tables -t filter -N syn_flood
+ip6tables -t filter -N zone_lan_input
+ip6tables -t filter -N zone_lan_output
+ip6tables -t filter -N zone_lan_forward
+ip6tables -t filter -N zone_lan_src_accept
+ip6tables -t filter -N zone_lan_dest_accept
+ip6tables -t filter -N input_lan_rule
+ip6tables -t filter -N output_lan_rule
+ip6tables -t filter -N forwarding_lan_rule
+ip6tables -t filter -A zone_lan_input -m comment --comment "user chain for input" -j input_lan_rule
+ip6tables -t filter -A zone_lan_output -m comment --comment "user chain for output" -j output_lan_rule
+ip6tables -t filter -A zone_lan_forward -m comment --comment "user chain for forwarding" -j forwarding_lan_rule
+ip6tables -t filter -N zone_wan_input
+ip6tables -t filter -N zone_wan_output
+ip6tables -t filter -N zone_wan_forward
+ip6tables -t filter -N zone_wan_src_REJECT
+ip6tables -t filter -N zone_wan_dest_accept
+ip6tables -t filter -N zone_wan_dest_REJECT
+ip6tables -t filter -N input_wan_rule
+ip6tables -t filter -N output_wan_rule
+ip6tables -t filter -N forwarding_wan_rule
+ip6tables -t filter -A zone_wan_input -m comment --comment "user chain for input" -j input_wan_rule
+ip6tables -t filter -A zone_wan_output -m comment --comment "user chain for output" -j output_wan_rule
+ip6tables -t filter -A zone_wan_forward -m comment --comment "user chain for forwarding" -j forwarding_wan_rule
+ip6tables -t filter -D INPUT -j delegate_input
+ip6tables -t filter -A INPUT -j delegate_input
+ip6tables -t filter -D OUTPUT -j delegate_output
+ip6tables -t filter -A OUTPUT -j delegate_output
+ip6tables -t filter -D FORWARD -j delegate_forward
+ip6tables -t filter -A FORWARD -j delegate_forward
+ip6tables -t filter -A delegate_input -i lo -j ACCEPT
+ip6tables -t filter -A delegate_output -o lo -j ACCEPT
+ip6tables -t filter -A delegate_input -m comment --comment "user chain for input" -j input_rule
+ip6tables -t filter -A delegate_output -m comment --comment "user chain for output" -j output_rule
+ip6tables -t filter -A delegate_forward -m comment --comment "user chain for forwarding" -j forwarding_rule
+ip6tables -t filter -A delegate_input -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+ip6tables -t filter -A delegate_output -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+ip6tables -t filter -A delegate_forward -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+ip6tables -t filter -A syn_flood -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -m limit --limit 25/sec --limit-burst 50 -j RETURN
+ip6tables -t filter -A syn_flood -j DROP
+ip6tables -t filter -A delegate_input -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j syn_flood
+ip6tables -t filter -A reject -p tcp -j REJECT --reject-with tcp-reset
+ip6tables -t filter -A reject -j REJECT --reject-with icmp6-port-unreachable
+ip6tables -t filter -A drop -j DROP
+ip6tables -t filter -A accept -j ACCEPT
+ip6tables -t filter -A zone_wan_input -p udp -s fe80::/ffc0:: -d fe80::/ffc0:: -m udp --sport 547 --dport 546 -m comment --comment Allow-DHCPv6 -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -s fe80::/ffc0:: -m icmp6 --icmpv6-type 130/0 -m comment --comment Allow-MLD -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -s fe80::/ffc0:: -m icmp6 --icmpv6-type 131/0 -m comment --comment Allow-MLD -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -s fe80::/ffc0:: -m icmp6 --icmpv6-type 132/0 -m comment --comment Allow-MLD -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -s fe80::/ffc0:: -m icmp6 --icmpv6-type 143/0 -m comment --comment Allow-MLD -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 128 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 129 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 1 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 2 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 3 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 4/0 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 4/1 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 133 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 135 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 134 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_input -p icmpv6 -m icmp6 --icmpv6-type 136 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Input -j accept
+ip6tables -t filter -A zone_wan_forward -p icmpv6 -m icmp6 --icmpv6-type 128 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Forward -j accept
+ip6tables -t filter -A zone_wan_forward -p icmpv6 -m icmp6 --icmpv6-type 129 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Forward -j accept
+ip6tables -t filter -A zone_wan_forward -p icmpv6 -m icmp6 --icmpv6-type 1 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Forward -j accept
+ip6tables -t filter -A zone_wan_forward -p icmpv6 -m icmp6 --icmpv6-type 2 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Forward -j accept
+ip6tables -t filter -A zone_wan_forward -p icmpv6 -m icmp6 --icmpv6-type 3 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Forward -j accept
+ip6tables -t filter -A zone_wan_forward -p icmpv6 -m icmp6 --icmpv6-type 4/0 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Forward -j accept
+ip6tables -t filter -A zone_wan_forward -p icmpv6 -m icmp6 --icmpv6-type 4/1 -m limit --limit 1000/sec -m comment --comment Allow-ICMPv6-Forward -j accept
+ip6tables -t filter -A zone_wan_forward -p esp -m comment --comment "@rule[7]" -j zone_lan_dest_accept
+ip6tables -t filter -A zone_wan_forward -p udp -m udp --dport 500 -m comment --comment "@rule[8]" -j zone_lan_dest_accept
+ip6tables -t filter -A zone_lan_forward -m comment --comment "forwarding lan -> wan" -j zone_wan_dest_accept
+ip6tables -t filter -A zone_lan_input -m conntrack --ctstate DNAT -m comment --comment "Accept port redirections" -j accept
+ip6tables -t filter -A zone_lan_forward -m conntrack --ctstate DNAT -m comment --comment "Accept port forwards" -j accept
+ip6tables -t filter -A zone_lan_input -j zone_lan_src_accept
+ip6tables -t filter -A zone_lan_forward -j zone_lan_dest_accept
+ip6tables -t filter -A zone_lan_output -j zone_lan_dest_accept
+ip6tables -t filter -D zone_lan_src_accept -i br-lan -j accept
+ip6tables -t filter -A zone_lan_src_accept -i br-lan -j accept
+ip6tables -t filter -D zone_lan_dest_accept -o br-lan -j accept
+ip6tables -t filter -A zone_lan_dest_accept -o br-lan -j accept
+ip6tables -t filter -D delegate_input -i br-lan -j zone_lan_input
+ip6tables -t filter -A delegate_input -i br-lan -j zone_lan_input
+ip6tables -t filter -D delegate_output -o br-lan -j zone_lan_output
+ip6tables -t filter -A delegate_output -o br-lan -j zone_lan_output
+ip6tables -t filter -D delegate_forward -i br-lan -j zone_lan_forward
+ip6tables -t filter -A delegate_forward -i br-lan -j zone_lan_forward
+ip6tables -t filter -A zone_wan_input -m conntrack --ctstate DNAT -m comment --comment "Accept port redirections" -j accept
+ip6tables -t filter -A zone_wan_forward -m conntrack --ctstate DNAT -m comment --comment "Accept port forwards" -j accept
+ip6tables -t filter -A zone_wan_input -j zone_wan_src_REJECT
+ip6tables -t filter -A zone_wan_forward -j zone_wan_dest_REJECT
+ip6tables -t filter -A zone_wan_output -j zone_wan_dest_accept
+ip6tables -t filter -D zone_wan_dest_accept -o eth2 -j accept
+ip6tables -t filter -A zone_wan_dest_accept -o eth2 -j accept
+ip6tables -t filter -D zone_wan_src_REJECT -i eth2 -j reject
+ip6tables -t filter -A zone_wan_src_REJECT -i eth2 -j reject
+ip6tables -t filter -D zone_wan_dest_REJECT -o eth2 -j reject
+ip6tables -t filter -A zone_wan_dest_REJECT -o eth2 -j reject
+ip6tables -t filter -D delegate_input -i eth2 -j zone_wan_input
+ip6tables -t filter -A delegate_input -i eth2 -j zone_wan_input
+ip6tables -t filter -D delegate_output -o eth2 -j zone_wan_output
+ip6tables -t filter -A delegate_output -o eth2 -j zone_wan_output
+ip6tables -t filter -D delegate_forward -i eth2 -j zone_wan_forward
+ip6tables -t filter -A delegate_forward -i eth2 -j zone_wan_forward
+ip6tables -t filter -D zone_wan_dest_accept -o eth2 -j accept
+ip6tables -t filter -A zone_wan_dest_accept -o eth2 -j accept
+ip6tables -t filter -D zone_wan_src_REJECT -i eth2 -j reject
+ip6tables -t filter -A zone_wan_src_REJECT -i eth2 -j reject
+ip6tables -t filter -D zone_wan_dest_REJECT -o eth2 -j reject
+ip6tables -t filter -A zone_wan_dest_REJECT -o eth2 -j reject
+ip6tables -t filter -D delegate_input -i eth2 -j zone_wan_input
+ip6tables -t filter -A delegate_input -i eth2 -j zone_wan_input
+ip6tables -t filter -D delegate_output -o eth2 -j zone_wan_output
+ip6tables -t filter -A delegate_output -o eth2 -j zone_wan_output
+ip6tables -t filter -D delegate_forward -i eth2 -j zone_wan_forward
+ip6tables -t filter -A delegate_forward -i eth2 -j zone_wan_forward
+ip6tables -t filter -A delegate_forward -j reject
+ip6tables -t filter -A delegate_input -j accept
+ip6tables -t filter -A delegate_output -j accept
+ip6tables -t nat -N delegate_prerouting
+ip6tables -t nat -N delegate_postrouting
+ip6tables -t nat -N prerouting_rule
+ip6tables -t nat -N postrouting_rule
+ip6tables -t nat -N zone_lan_postrouting
+ip6tables -t nat -N zone_lan_prerouting
+ip6tables -t nat -N prerouting_lan_rule
+ip6tables -t nat -N postrouting_lan_rule
+ip6tables -t nat -A zone_lan_prerouting -m comment --comment "user chain for prerouting" -j prerouting_lan_rule
+ip6tables -t nat -A zone_lan_postrouting -m comment --comment "user chain for postrouting" -j postrouting_lan_rule
+ip6tables -t nat -N zone_wan_postrouting
+ip6tables -t nat -N zone_wan_prerouting
+ip6tables -t nat -N prerouting_wan_rule
+ip6tables -t nat -N postrouting_wan_rule
+ip6tables -t nat -A zone_wan_prerouting -m comment --comment "user chain for prerouting" -j prerouting_wan_rule
+ip6tables -t nat -A zone_wan_postrouting -m comment --comment "user chain for postrouting" -j postrouting_wan_rule
+ip6tables -t nat -D PREROUTING -j delegate_prerouting
+ip6tables -t nat -A PREROUTING -j delegate_prerouting
+ip6tables -t nat -D POSTROUTING -j delegate_postrouting
+ip6tables -t nat -A POSTROUTING -j delegate_postrouting
+ip6tables -t nat -A delegate_prerouting -m comment --comment "user chain for prerouting" -j prerouting_rule
+ip6tables -t nat -A delegate_postrouting -m comment --comment "user chain for postrouting" -j postrouting_rule
+ip6tables -t nat -D delegate_prerouting -i br-lan -j zone_lan_prerouting
+ip6tables -t nat -A delegate_prerouting -i br-lan -j zone_lan_prerouting
+ip6tables -t nat -D delegate_postrouting -o br-lan -j zone_lan_postrouting
+ip6tables -t nat -A delegate_postrouting -o br-lan -j zone_lan_postrouting
+ip6tables -t nat -D delegate_prerouting -i eth2 -j zone_wan_prerouting
+ip6tables -t nat -A delegate_prerouting -i eth2 -j zone_wan_prerouting
+ip6tables -t nat -D delegate_postrouting -o eth2 -j zone_wan_postrouting
+ip6tables -t nat -A delegate_postrouting -o eth2 -j zone_wan_postrouting
+ip6tables -t nat -D delegate_prerouting -i eth2 -j zone_wan_prerouting
+ip6tables -t nat -A delegate_prerouting -i eth2 -j zone_wan_prerouting
+ip6tables -t nat -D delegate_postrouting -o eth2 -j zone_wan_postrouting
+ip6tables -t nat -A delegate_postrouting -o eth2 -j zone_wan_postrouting
+ip6tables -t mangle -N mssfix
+ip6tables -t mangle -N fwmark
+ip6tables -t mangle -D FORWARD -j mssfix
+ip6tables -t mangle -A FORWARD -j mssfix
+ip6tables -t mangle -D PREROUTING -j fwmark
+ip6tables -t mangle -A PREROUTING -j fwmark
+ip6tables -t mangle -D mssfix -p tcp -o eth2 -m tcp --tcp-flags SYN,RST SYN -m comment --comment "wan (mtu_fix)" -j TCPMSS --clamp-mss-to-pmtu
+ip6tables -t mangle -A mssfix -p tcp -o eth2 -m tcp --tcp-flags SYN,RST SYN -m comment --comment "wan (mtu_fix)" -j TCPMSS --clamp-mss-to-pmtu
+ip6tables -t mangle -D mssfix -p tcp -o eth2 -m tcp --tcp-flags SYN,RST SYN -m comment --comment "wan (mtu_fix)" -j TCPMSS --clamp-mss-to-pmtu
+ip6tables -t mangle -A mssfix -p tcp -o eth2 -m tcp --tcp-flags SYN,RST SYN -m comment --comment "wan (mtu_fix)" -j TCPMSS --clamp-mss-to-pmtu
+ip6tables -t raw -N delegate_notrack
+ip6tables -t raw -D PREROUTING -j delegate_notrack
+ip6tables -t raw -A PREROUTING -j delegate_notrack
