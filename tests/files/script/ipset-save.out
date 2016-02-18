@@ -1,0 +1,52 @@
+add turris_00000001_l_a_4_X 192.168.1.255
+add turris_00000001_l_a_6_X 2000::
+add turris_00000001_l_ap_4_X 192.168.3.252/30,udp:201
+add turris_00000001_l_ap_6_X 2002::/126,udp:101
+add turris_00000001_lb_a_4_X 192.168.2.254/31
+add turris_00000001_lb_a_6_X 2001::/127
+add turris_00000001_lb_ap_4_X 192.168.4.248/29,tcp:202
+add turris_00000001_lb_ap_6_X 2003::/125,tcp:102
+add turris_00000002_l_a_4_X 192.168.5.240/28
+add turris_00000003_lb_a_4_X 192.168.6.224/27
+add turris_00000004_b_a_6_X 2004::/124
+add turris_00000005_lb_a_6_X 2005::/123
+add turris_00000006_l_a_4_X 192.168.7.192/26
+add turris_00000007_l_a_6_X 2006::/122
+add turris_00000008_l_a_4_X 192.168.8.128/25
+add turris_00000009_l_a_6_X 2007::/121
+add turris_0000000A_l_a_4_X 192.168.9.0/24
+add turris_0000000B_l_a_6_X 2008::/120
+add turris_0000000C_l_a_4_X 192.168.10.0/23
+add turris_0000000D_l_a_6_X 2009::/119
+add turris_0000000E_l_a_4_X 192.168.8.0/22
+add turris_0000000F_l_a_6_X 2010::/118
+create turris_00000001_l_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_00000001_l_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_00000001_l_ap_4_X hash:net,port family inet hashsize 1024 maxelem 65536
+create turris_00000001_l_ap_6_X hash:net,port family inet6 hashsize 1024 maxelem 65536
+create turris_00000001_lb_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_00000001_lb_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_00000001_lb_ap_4_X hash:net,port family inet hashsize 1024 maxelem 65536
+create turris_00000001_lb_ap_6_X hash:net,port family inet6 hashsize 1024 maxelem 65536
+create turris_00000002_l_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_00000003_lb_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_00000004_b_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_00000005_lb_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_00000006_l_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_00000007_l_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_00000008_l_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_00000009_l_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_0000000A_l_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_0000000B_l_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_0000000C_l_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_0000000D_l_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_0000000E_l_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_0000000F_l_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_10000001_l_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_10000001_l_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_10000001_l_ap_4_X hash:net,port family inet hashsize 1024 maxelem 65536
+create turris_10000001_l_ap_6_X hash:net,port family inet6 hashsize 1024 maxelem 65536
+create turris_10000001_lb_a_4_X hash:net family inet hashsize 1024 maxelem 65536
+create turris_10000001_lb_a_6_X hash:net family inet6 hashsize 1024 maxelem 65536
+create turris_10000001_lb_ap_4_X hash:net,port family inet hashsize 1024 maxelem 65536
+create turris_10000001_lb_ap_6_X hash:net,port family inet6 hashsize 1024 maxelem 65536

@@ -1,0 +1,91 @@
+:turris - [0:0]
+:turris-log-incoming - [0:0]
+:turris-nflog - [0:0]
+-A accept -j turris
+-A drop -j turris-log-incoming
+-A forwarding_rule -j turris-nflog
+-A input_rule -j turris-nflog
+-A output_rule -j turris-nflog
+-A reject -j turris-log-incoming
+-A turris -o eth0 -m set --match-set turris_00000001_l_a_4_X dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1000
+-A turris -o eth0 -m set --match-set turris_00000001_l_ap_4_X dst,dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1002
+-A turris -o eth0 -m set --match-set turris_00000001_lb_a_4_X dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1004
+-A turris -o eth0 -m set --match-set turris_00000001_lb_ap_4_X dst,dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1006
+-A turris -o eth0 -m set --match-set turris_00000002_l_a_4_X dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1008
+-A turris -o eth0 -m set --match-set turris_00000003_lb_a_4_X dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1009
+-A turris -o eth0 -m set --match-set turris_00000006_l_a_4_X dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1012
+-A turris -o eth0 -m set --match-set turris_0000000C_l_a_4_X dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1016
+-A turris -o eth0 -m set --match-set turris_10000001_l_a_4_X dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1018
+-A turris -o eth0 -m set --match-set turris_10000001_lb_a_4_X dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1019
+-A turris -o eth0 -m set --match-set turris_10000001_l_ap_4_X dst,dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1020
+-A turris -o eth0 -m set --match-set turris_10000001_lb_ap_4_X dst,dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1021
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_l_a_4_X dst -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_l_a_4_X src -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_l_ap_4_X dst,dst -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_l_ap_4_X src,src -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_lb_a_4_X dst -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_lb_a_4_X src -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_lb_ap_4_X dst,dst -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_lb_ap_4_X src,src -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_00000003_lb_a_4_X dst -j LOG --log-prefix "turris-00000003: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000003_lb_a_4_X src -j LOG --log-prefix "turris-00000003: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_00000006_l_a_4_X dst -j LOG --log-prefix "turris-00000006: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000006_l_a_4_X src -j LOG --log-prefix "turris-00000006: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_00000008_l_a_4_X dst -j LOG --log-prefix "turris-00000008: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000008_l_a_4_X src -j LOG --log-prefix "turris-00000008: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_0000000A_l_a_4_X dst -j LOG --log-prefix "turris-0000000A: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_0000000A_l_a_4_X src -j LOG --log-prefix "turris-0000000A: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_0000000C_l_a_4_X dst -j LOG --log-prefix "turris-0000000C: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_0000000C_l_a_4_X src -j LOG --log-prefix "turris-0000000C: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_0000000E_l_a_4_X dst -j LOG --log-prefix "turris-0000000E: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_0000000E_l_a_4_X src -j LOG --log-prefix "turris-0000000E: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_l_a_4_X dst -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_l_a_4_X src -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_lb_a_4_X dst -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_lb_a_4_X src -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_l_ap_4_X dst,dst -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_l_ap_4_X src,src -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris -o eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_lb_ap_4_X dst,dst -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris -i eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_lb_ap_4_X src,src -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris -o eth0 -m set --match-set turris_00000001_lb_a_4_X dst -j DROP
+-A turris -i eth0 -m set --match-set turris_00000001_lb_a_4_X src -j DROP
+-A turris -o eth0 -m set --match-set turris_00000001_lb_ap_4_X dst,dst -j DROP
+-A turris -i eth0 -m set --match-set turris_00000001_lb_ap_4_X src,src -j DROP
+-A turris -o eth0 -m set --match-set turris_00000002_l_a_4_X dst -j DROP
+-A turris -i eth0 -m set --match-set turris_00000002_l_a_4_X src -j DROP
+-A turris -o eth0 -m set --match-set turris_10000001_lb_a_4_X dst -j DROP
+-A turris -i eth0 -m set --match-set turris_10000001_lb_a_4_X src -j DROP
+-A turris -o eth0 -m set --match-set turris_10000001_lb_ap_4_X dst,dst -j DROP
+-A turris -i eth0 -m set --match-set turris_10000001_lb_ap_4_X src,src -j DROP
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_l_a_4_X src -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_l_ap_4_X src,src -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_lb_a_4_X src -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000001_lb_ap_4_X src,src -j LOG --log-prefix "turris-00000001: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000003_lb_a_4_X src -j LOG --log-prefix "turris-00000003: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000006_l_a_4_X src -j LOG --log-prefix "turris-00000006: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_00000008_l_a_4_X src -j LOG --log-prefix "turris-00000008: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_0000000A_l_a_4_X src -j LOG --log-prefix "turris-0000000A: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_0000000C_l_a_4_X src -j LOG --log-prefix "turris-0000000C: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_0000000E_l_a_4_X src -j LOG --log-prefix "turris-0000000E: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_l_a_4_X src -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_lb_a_4_X src -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_l_ap_4_X src,src -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris-log-incoming -i eth0 -m limit --limit 1/sec -m set --match-set turris_10000001_lb_ap_4_X src,src -j LOG --log-prefix "turris-10000001: " --log-level 7
+-A turris-log-incoming -i eth0 -m set --match-set turris_0000000C_l_a_4_X src -m comment --comment turris-nflog -j NFLOG --nflog-group 1016
+-A turris-log-incoming -i eth0 -m set --match-set turris_00000001_l_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_00000001_l_ap_4_X src,src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_00000001_lb_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_00000001_lb_ap_4_X src,src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_00000003_lb_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_00000006_l_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_00000008_l_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_0000000A_l_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_0000000C_l_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_0000000E_l_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_10000001_l_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_10000001_lb_a_4_X src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_10000001_l_ap_4_X src,src -j RETURN
+-A turris-log-incoming -i eth0 -m set --match-set turris_10000001_lb_ap_4_X src,src -j RETURN
+-A turris-log-incoming -m limit --limit 1/sec --limit-burst 500 -j LOG --log-prefix "turris-00000000: " --log-level 7
+-A turris-nflog -o eth0 -m set --match-set turris_00000008_l_a_4_X dst -m comment --comment turris-nflog -j NFLOG --nflog-group 1014
+-A turris-nflog -i eth0 -m set --match-set turris_00000008_l_a_4_X src -m comment --comment turris-nflog -j NFLOG --nflog-group 1014
