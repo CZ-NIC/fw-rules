@@ -91,15 +91,15 @@ fi
 
 TMP_FILE="/tmp/iptables.rules"
 TMP_FILE6="/tmp/ip6tables.rules"
-PERSISTENT_IPSETS="/usr/share/firewall/turris-ipsets.gz"
+PERSISTENT_IPSETS="${OVERRIDE_IPSETS:-"/usr/share/firewall/turris-ipsets.gz"}"
 TMP_IPSETS="/tmp/turris-ipsets"
 ULOGD_FILE="/tmp/etc/ulogd-turris.conf"
 PCAP_DIR="/var/log/turris-pcap"
 BIN_DIR="/usr/share/firewall"
 
 VERSION=0
-WAN=""
-WAN6=""
+WAN=${OVERRIDE_WAN}
+WAN6=${OVERRIDE_WAN6}
 
 while [ -z "${WAN}" ]; do
 
