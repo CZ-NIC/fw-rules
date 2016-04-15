@@ -71,12 +71,8 @@ release_lockfile() {
 }
 
 get_wan() {
-    IFACES="$1"
-    IGNORE="$2"
-    for iface in $IFACES ; do
-        if echo "$IGNORE" | grep -qwF "$iface" ; then
-            continue;
-        fi
+    # just return the first one for now
+    for iface in "$1"; do
         echo "$iface"
         return
     done
@@ -98,56 +94,47 @@ PCAP_DIR="/var/log/turris-pcap"
 BIN_DIR="/usr/share/firewall"
 
 VERSION=0
-WAN=${OVERRIDE_WAN}
-WAN6=${OVERRIDE_WAN6}
 
-while [ -z "${WAN}" ]; do
-
-    # read wan from nikola
-    config_load nikola
+# get wans
+config_load nikola
+if [ -n "${OVERRIDE_WAN}" ]; then
+    WAN=${OVERRIDE_WAN}
+else
     config_get WAN main wan_ifname
-    config_get WAN6 main wan6_ifname
-
-    # autodetect using default routes (taken from ucollect init script)
-
-    # Look into the routing tables to guess WAN interfaces
-    V4=$(route -n | sed -ne 's/ *$//;/^0\.0\.0\.0  *[0-9.][0-9.]*  *0\.0\.0\.0/s/.* //p')
-    V6=$(route -n -A inet6 | sed -ne 's/ *$//;/^::\/0  /s/.* //p')
-
+    if [ -z "${WAN}" ]; then
+        # Look into the routing tables to guess WAN interfaces
+        WAN=$(route -n | sed -ne 's/ *$//;/^0\.0\.0\.0  *[0-9.][0-9.]*  *0\.0\.0\.0/s/.* //p')
+    fi
     # Unify them and remove duplicates
-    V4=$(echo "$V4" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
-    V6=$(echo "$V6" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
+    WAN=$(echo "$WAN" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
+    WAN=$(get_wan "$WAN")
+fi
 
-    IGNORE=$(uci -X show network | sed -ne 's/^network\.\([^.]*\)=interface$/\1/p' | while read iface ; do
-        proto=$(uci -q get network.$iface.proto)
-        name=$(echo "$proto-$iface" | head -c 15)
-        # TODO: What about L2TP? #3093
-        if [ "$proto" = "6in4" -o "$proto" = "6to4" -o "$proto" = "6rd" -o "$proto" = "dslite" ] ; then
-            # These are tunnels. We can look into them (and do) and they'll travel through the
-            # WAN interface, so we don't need these. Ignore them.
-            echo "$name"
-        fi
-    done)
-
-    if [ -z "${WAN}" ]; then
-        WAN=$(get_wan "$V4" "$IGNORE")
-    fi
+if [ -n "${OVERRIDE_WAN6}" ]; then
+    WAN6=${OVERRIDE_WAN6}
+else
+    config_get WAN6 main wan6_ifname
     if [ -z "${WAN6}" ]; then
-        WAN6=$(get_wan "$V6" "$IGNORE")
-        if [ -z "${WAN6}" ]; then  # when WAN6 not set assign WAN as WAN6
-            WAN6=${WAN}
-        fi
+        # Look into the routing tables to guess WAN interfaces
+        WAN6=$(route -n -A inet6 | sed -ne 's/ *$//;/^::\/0  /s/.* //p')
     fi
+    # Unify them and remove duplicates
+    WAN6=$(echo "$WAN6" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
+    WAN6=$(get_wan "$WAN6")
 
-    if [ -z "${WAN}" ]; then
-        logger -t turris-firewall-rules -p err "(v${VERSION}) Unable to determine the WAN interface. Exiting..."
-        release_lockfile
-        exit 1
-    else
-        logger -t turris-firewall-rules -p info "(v${VERSION}) IPv4 WAN interface used - '${WAN}'"
-        logger -t turris-firewall-rules -p info "(v${VERSION}) IPv6 WAN interface used - '${WAN6}'"
+    if [ -z "${WAN6}" ]; then  # when WAN6 not set assign WAN as WAN6
+        WAN6=${WAN}
     fi
-done
+fi
+
+if [ -z "${WAN}" ]; then
+    logger -t turris-firewall-rules -p err "(v${VERSION}) Unable to determine the WAN interface. Exiting..."
+    release_lockfile
+    exit 1
+else
+    logger -t turris-firewall-rules -p info "(v${VERSION}) IPv4 WAN interface used - '${WAN}'"
+    logger -t turris-firewall-rules -p info "(v${VERSION}) IPv6 WAN interface used - '${WAN6}'"
+fi
 
 remove_tmp_files() {
     rm -f "${TMP_FILE}"
