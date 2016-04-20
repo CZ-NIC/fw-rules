@@ -121,11 +121,11 @@ else
     # Unify them and remove duplicates
     WAN6=$(echo "$WAN6" | sed -e 's/  */ /g;s/ /\n/g' | sort -u)
     WAN6=$(get_wan "$WAN6")
-
-    if [ -z "${WAN6}" ]; then  # when WAN6 not set assign WAN as WAN6
-        WAN6=${WAN}
-    fi
 fi
+
+# if one wan is empty use the other one for both
+WAN6=${WAN6:=${WAN}}
+WAN=${WAN:=${WAN6}}
 
 if [ -z "${WAN}" ]; then
     logger -t turris-firewall-rules -p err "(v${VERSION}) Unable to determine the WAN interface. Exiting..."
