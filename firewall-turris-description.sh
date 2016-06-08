@@ -47,27 +47,23 @@ BEGIN {
     comments_idx=0
 }
 /# / {
-    can_print=1
     tmp=$0
     sub(/# /, "", tmp)
     comments[comments_idx]=tmp
     comments_idx++
 }
-/^add |^create |^#Create/ {
-    if (can_print) {
-        split($2, parsed, "_")
-        rule_id=substr(parsed[2], 0, 7)
-        rule_id=rule_id "0"
-        if (!(rule_id in used)) {
-            print rule_id
-            for (i = 0; i < comments_idx; ++i) {
-                print "\t" comments[i]
-            }
-            print "\n"
-            used[rule_id] = true
+/^create / {
+    split($2, parsed, "_")
+    rule_id=substr(parsed[2], 0, 7)
+    rule_id=rule_id "0"
+    if (!(rule_id in used)) {
+        print rule_id
+        for (i = 0; i < comments_idx; ++i) {
+            print "\t" comments[i]
         }
+        print "\n"
+        used[rule_id] = true
     }
-    can_print=0
 }
 !/# / {
     comments_idx=0
