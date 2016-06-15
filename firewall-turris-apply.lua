@@ -42,24 +42,34 @@
 
 --TODO
 -- Get WAN device
--- parse uci config
--- load overrides
 -- Unzip and read file
 -- tests (loaded ipsets, loaded NFLOG, ...)
 -- Remove existing injected ipsets
 -- Load ipsets
 -- Create iptables rules if needed
 -- Handle ulogd
+-- use overrides
 -- debug mode
 --TODO
 
-local nixio = require 'nixio'
 local io = require 'io'
+local nixio = require 'nixio'
 local os = require 'os'
+local uci = require 'uci'
 
 local VERSION = "0"
 local LOCK_FILE_PATH = "/tmp/turris-firewall-rules.lock"
 local lock_file = nil
+local config = {
+	pcap = {
+		enabled = false,
+		extensive = false,
+		log_dropped = false,
+		log_other_dropped = false
+	},
+	overrides = {
+	}
+}
 
 
 function log(level, message)
@@ -83,9 +93,71 @@ function unlock()
 	end
 end
 
+function read_uci()
+	local function read_bool(text)
+		if text == "1" or text == "yes" or text == "on" or text == "true" or text == "enabled" then
+			return true
+		elseif text == "0" or text == "no" or text == "off" or text == "false" or text == "disabled" then
+			return false
+		else
+			return nil
+		end
+	end
+
+	local cursor = uci.cursor()
+
+	-- read wans from uci
+	config.wan = cursor:get("nikola", "main", "wan_ifname")
+	config.wan6 = cursor:get("nikola", "main", "wan6_ifname")
+
+	-- read pcap
+	local pcap_enabled = cursor:get("firewall-turris", "pcap", "enabled")
+	if pcap_enabled ~= nil then
+		config.pcap.enabled = pcap_enabled
+	end
+	local pcap_extensive = cursor:get("firewall-turris", "pcap", "extensive")
+	if pcap_extensive ~= nil then
+		config.pcap.extensive = pcap_extensive
+	end
+	local pcap_dropped = cursor:get("firewall-turris", "pcap", "log_dropped")
+	if pcap_dropped ~= nil then
+		config.pcap.log_dropped = pcap_dropped
+	end
+	local pcap_other_dropped = cursor:get("firewall-turris", "pcap", "log_other_dropped")
+	if pcap_other_dropped ~= nil then
+		config.pcap.log_other_dropped = pcap_other_dropped
+	end
+
+	-- read overrides
+	cursor:foreach("firewall-turris", "rule_override", function(record)
+		local name = nil
+		if record.rule_id then
+			name = record.rule_id
+		elseif string.sub(record[".name"], 1, 3) ~= "cfg" then
+			name = record[".name"]
+		else
+			log('warning', "uci override invalid!")
+			return
+		end
+		config.overrides[name] = {}
+		for key, value in pairs(record) do
+			if key == "action" then
+				config.overrides[name].action = value
+			elseif key == "pcap_enabled" then
+				config.overrides[name].enabled = read_bool(value)
+			elseif key == "pcap_extensive" then
+				config.overrides[name].extensive = read_bool(value)
+			elseif key == "pcap_log_dropped" then
+				config.overrides[name].log_dropped = read_bool(value)
+			end
+		end
+	end)
+end
+
 -- locking
 lock()
 
+read_uci()
 
 -- unlocking
 unlock()
