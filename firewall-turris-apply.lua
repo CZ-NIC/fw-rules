@@ -195,5 +195,14 @@ config.ipset_path = nixio.getenv("OVERRIDE_IPSETS") or config.ipset_path
 config.wan = nixio.getenv("OVERRIDE_WAN") or config.wan
 config.wan6 = nixio.getenv("OVERRIDE_WAN6") or config.wan6
 
+-- try to fill the other wan as well
+config.wan = config.wan or config.wan6
+config.wan6 = config.wan6 or config.wan
+
+if nil == config.wan then
+	log("err", "Unable to determine the WAN interface. Exiting...")
+	os.exit(1)
+end
+
 -- unlocking
 unlock()
