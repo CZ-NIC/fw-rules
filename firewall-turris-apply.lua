@@ -41,7 +41,6 @@
 --
 
 --TODO
--- env variable overrides
 -- Unzip and read file
 -- tests (loaded ipsets, loaded NFLOG, ...)
 -- Remove existing injected ipsets
@@ -62,6 +61,7 @@ local VERSION = "0"
 local LOCK_FILE_PATH = "/tmp/turris-firewall-rules.lock"
 local lock_file = nil
 local config = {
+	ipset_path = "/usr/share/firewall/turris-ipsets.gz",
 	pcap = {
 		enabled = false,
 		extensive = false,
@@ -189,6 +189,11 @@ lock()
 
 config.wan, config.wan6 = detect_wans()
 read_uci()
+
+-- setting overrides using env variables
+config.ipset_path = nixio.getenv("OVERRIDE_IPSETS") or config.ipset_path
+config.wan = nixio.getenv("OVERRIDE_WAN") or config.wan
+config.wan6 = nixio.getenv("OVERRIDE_WAN6") or config.wan6
 
 -- unlocking
 unlock()
