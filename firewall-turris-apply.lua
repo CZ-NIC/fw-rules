@@ -41,7 +41,7 @@
 --
 
 --TODO
--- Get WAN device
+-- env variable overrides
 -- Unzip and read file
 -- tests (loaded ipsets, loaded NFLOG, ...)
 -- Remove existing injected ipsets
@@ -56,6 +56,7 @@ local io = require 'io'
 local nixio = require 'nixio'
 local os = require 'os'
 local uci = require 'uci'
+local ip = require 'luci.ip'
 
 local VERSION = "0"
 local LOCK_FILE_PATH = "/tmp/turris-firewall-rules.lock"
@@ -107,8 +108,14 @@ function read_uci()
 	local cursor = uci.cursor()
 
 	-- read wans from uci
-	config.wan = cursor:get("nikola", "main", "wan_ifname")
-	config.wan6 = cursor:get("nikola", "main", "wan6_ifname")
+	local wan = cursor:get("nikola", "main", "wan_ifname")
+	if wan then
+		config.wan = wan[1]
+	end
+	local wan6 = cursor:get("nikola", "main", "wan6_ifname")
+	if wan6 then
+		config.wan6 = wan6[1]
+	end
 
 	-- read pcap
 	local pcap_enabled = cursor:get("firewall-turris", "pcap", "enabled")
@@ -154,9 +161,33 @@ function read_uci()
 	end)
 end
 
+function detect_wans()
+	local ipv4_wans = {}
+	local routes4 = ip.routes({family = 4})
+	for _, record in pairs(routes4) do
+		if tostring(record.dest) == "0.0.0.0/0" then
+			table.insert(ipv4_wans, record.dev)
+		end
+	end
+
+	local ipv6_wans = {}
+	local routes6 = ip.routes({family = 6})
+	-- sort ipv6 records according to metric
+	table.sort(routes6, function(a, b) return tonumber(a.metric, 16) < tonumber(b.metric, 16) end)
+	for _, record in pairs(routes6) do
+		if tostring(record.dest) == "::/0" then
+			table.insert(ipv6_wans, record.dev)
+		end
+	end
+
+	-- return first records only
+	return ipv4_wans[1], ipv6_wans[1]
+end
+
 -- locking
 lock()
 
+config.wan, config.wan6 = detect_wans()
 read_uci()
 
 -- unlocking
