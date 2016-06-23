@@ -41,10 +41,7 @@
 --
 
 --TODO
--- Unzip and read file
 -- tests (loaded ipsets, loaded NFLOG, ...)
--- Remove existing injected ipsets
--- Load ipsets
 -- Create iptables rules if needed
 -- Handle ulogd
 -- use overrides
@@ -56,10 +53,14 @@ local nixio = require 'nixio'
 local os = require 'os'
 local uci = require 'uci'
 local ip = require 'luci.ip'
+local util = require 'luci.util'
 
 local VERSION = "0"
 local LOCK_FILE_PATH = "/tmp/turris-firewall-rules.lock"
+local IPSET_TMP = "/tmp/turris-ipsets"
+local IPSET_TMP_LOAD = IPSET_TMP .. ".to_load"
 local lock_file = nil
+local ipset_lists = {}
 local config = {
 	ipset_path = "/usr/share/firewall/turris-ipsets.gz",
 	pcap = {
@@ -92,6 +93,11 @@ function unlock()
 		nixio.fs.unlink(LOCK_FILE_PATH)
 		lock_file:close()
 	end
+end
+
+function unlock_and_exit(code)
+	unlock()
+	os.exit(code)
 end
 
 function read_uci()
@@ -184,6 +190,87 @@ function detect_wans()
 	return ipv4_wans[1], ipv6_wans[1]
 end
 
+function load_ipsets()
+	local function insert_ipset(full_name, skip)
+		local splitted = util.split(full_name, '_')
+		table.insert(ipset_lists, {
+			full_name = full_name,
+			rule_id = splitted[2],
+			action = splitted[3],
+			address_port = splitted[4],
+			family = splitted[5],
+			skip = skip
+		})
+	end
+	if 0 ~= os.execute('gunzip -c ' .. config.ipset_path .. ' > ' .. IPSET_TMP) then
+		log("err", "Failed to unpack ipset rules")
+		os.remove(IPSET_TMP)
+		unlock_and_exit(1)
+	end
+	local f_src, err = io.open(IPSET_TMP)
+	if not f_src then
+		log("err", err)
+		os.remove(IPSET_TMP)
+		unlock_and_exit(1)
+	end
+	local f_dst, err = io.open(IPSET_TMP_LOAD, "w")
+	if not f_dst then
+		log("err", err)
+		os.remove(IPSET_TMP)
+		unlock_and_exit(1)
+	end
+
+	local loaded_ipsets = {}
+	for name in io.popen("ipset list -n | grep '^turris' | cut -d ' ' -f2"):lines() do
+		loaded_ipsets[name] = true
+	end
+
+	-- read ipsets
+	for line in f_src:lines() do
+		-- list header
+		if line:match('^create ') then
+			local full_name = line:match('turris[^ ]*')
+			-- don't insert loaded injected ipsets
+			if line:match('^create turris_1') and loaded_ipsets[full_name .. "_X"] then
+				insert_ipset(full_name, true)
+			else
+				insert_ipset(full_name)
+				f_dst:write(line .. "\n")
+			end
+		else
+			f_dst:write(line .. "\n")
+		end
+	end
+
+	-- load ipsets
+	if 0 ~= os.execute('ipset restore -f ' .. IPSET_TMP_LOAD) then
+        log( "err", "Failed to restore ipsets")
+		os.remove(IPSET_TMP)
+		os.remove(IPSET_TMP_LOAD)
+		unlock_and_exit(1)
+	end
+
+	-- switch ipsets
+	for _, ipset in pairs(ipset_lists) do
+		if not ipset.skip then
+			if loaded_ipsets[ipset.full_name .. '_X'] then
+				if 0 ~= os.execute('ipset swap ' .. ipset.full_name .. ' ' .. ipset.full_name .. '_X') then
+					log("warning", "Failed to swap ipset '" .. ipset.full_name .. "'")
+				else
+					os.execute('ipset destroy ' .. ipset.full_name)
+				end
+			else
+				if 0 ~= os.execute('ipset rename ' .. ipset.full_name .. ' ' .. ipset.full_name .. '_X') then
+					log("warning", "Failed to rename ipset '" .. ipset.full_name .. "'")
+				end
+			end
+		end
+	end
+
+	os.remove(IPSET_TMP)
+	os.remove(IPSET_TMP_LOAD)
+end
+
 -- locking
 lock()
 
@@ -201,8 +288,13 @@ config.wan6 = config.wan6 or config.wan
 
 if nil == config.wan then
 	log("err", "Unable to determine the WAN interface. Exiting...")
-	os.exit(1)
+	unlock_and_exit(1)
+else
+	log("info", "IPv4 WAN interface used - '" .. config.wan .. "'")
+	log("info", "IPv6 WAN interface used - '" .. config.wan6 .. "'")
 end
+
+load_ipsets()
 
 -- unlocking
 unlock()
