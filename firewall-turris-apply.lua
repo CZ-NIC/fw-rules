@@ -73,11 +73,11 @@ local config = {
 	}
 }
 
+-- set logging
+nixio.openlog("turris-firewall-rules")
 
 function log(level, message)
-	nixio.openlog("turris-firewall-rules")
 	nixio.syslog(level, '(v' .. VERSION .. ') ' .. message)
-	nixio.closelog()
 end
 
 function lock()
