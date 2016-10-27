@@ -202,7 +202,7 @@ function load_ipsets()
 			skip = skip
 		})
 	end
-	if 0 ~= os.execute('gunzip -c ' .. config.ipset_path .. ' > ' .. IPSET_TMP) then
+	if 0 ~= os.execute('gunzip -c "' .. config.ipset_path .. '" > "' .. IPSET_TMP .. '"') then
 		log("err", "Failed to unpack ipset rules")
 		os.remove(IPSET_TMP)
 		unlock_and_exit(1)
@@ -243,7 +243,7 @@ function load_ipsets()
 	end
 
 	-- load ipsets
-	if 0 ~= os.execute('ipset restore -f ' .. IPSET_TMP_LOAD) then
+	if 0 ~= os.execute('ipset restore -f "' .. IPSET_TMP_LOAD .. '"') then
         log( "err", "Failed to restore ipsets")
 		os.remove(IPSET_TMP)
 		os.remove(IPSET_TMP_LOAD)
@@ -254,13 +254,13 @@ function load_ipsets()
 	for _, ipset in pairs(ipset_lists) do
 		if not ipset.skip then
 			if loaded_ipsets[ipset.full_name .. '_X'] then
-				if 0 ~= os.execute('ipset swap ' .. ipset.full_name .. ' ' .. ipset.full_name .. '_X') then
+				if 0 ~= os.execute('ipset swap "' .. ipset.full_name .. '" "' .. ipset.full_name .. '_X"') then
 					log("warning", "Failed to swap ipset '" .. ipset.full_name .. "'")
 				else
-					os.execute('ipset destroy ' .. ipset.full_name)
+					os.execute('ipset destroy "' .. ipset.full_name .. '"')
 				end
 			else
-				if 0 ~= os.execute('ipset rename ' .. ipset.full_name .. ' ' .. ipset.full_name .. '_X') then
+				if 0 ~= os.execute('ipset rename "' .. ipset.full_name .. '" "' .. ipset.full_name .. '_X"') then
 					log("warning", "Failed to rename ipset '" .. ipset.full_name .. "'")
 				end
 			end
