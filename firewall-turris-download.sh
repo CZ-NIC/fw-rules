@@ -96,6 +96,7 @@ TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
 
 CRL_FILE_PERSISTENT="/etc/ssl/crl.pem"
 CRL_FILE_TEMPORAL="/tmp/crl.pem"
+CACERT_FILE="/etc/ssl/turris.pem"
 
 BIN_DIR="/usr/share/firewall"
 
@@ -130,7 +131,7 @@ download() {
         url="$master_url"
     fi
 
-    curl -fs --cacert /etc/ssl/startcom.pem --crlfile "${CRL_FILE}" "${url}" -o "${destination}"
+    curl -fs --cacert ${CACERT_FILE} --crlfile "${CRL_FILE}" "${url}" -o "${destination}"
     if [ $? -eq 0 ]; then
         return 0
     else
@@ -236,7 +237,7 @@ mkdir -p "${DOWNLOAD_DIR}"
 
 if test_branch ; then
     if [ ! -f "${TEST_SIGN_KEY}" ] ; then
-        curl -fs --cacert /etc/ssl/startcom.pem --crlfile "${CRL_FILE}" "${TEST_SIGN_KEY_URL}" -o "${TEST_SIGN_KEY}"
+        curl -fs --cacert ${CACERT_FILE} --crlfile "${CRL_FILE}" "${TEST_SIGN_KEY_URL}" -o "${TEST_SIGN_KEY}"
     fi
     test="true"
 else
