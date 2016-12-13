@@ -94,18 +94,10 @@ TEST_SIGN_KEY_URL="https://api.turris.cz/firewall-test/turris-rules.pub"
 TEST_IPSETS_URL="https://api.turris.cz/firewall-test/turris-ipsets.gz"
 TEST_IPSETS_SIGN_URL="${TEST_IPSETS_URL}.sign"
 
-CRL_FILE_PERSISTENT="/etc/ssl/crl.pem"
-CRL_FILE_TEMPORAL="/tmp/crl.pem"
+CRL_FILE="/etc/ssl/crl.pem"
 CACERT_FILE="/etc/ssl/turris.pem"
 
 BIN_DIR="/usr/share/firewall"
-
-# Temporal crl file should be up-to date
-if [ -f "${CRL_FILE_TEMPORAL}" ]; then
-    CRL_FILE="${CRL_FILE_TEMPORAL}"
-else
-    CRL_FILE="${CRL_FILE_PERSISTENT}"
-fi
 
 # Return md5 of a file the file should exist
 file_md5() {
