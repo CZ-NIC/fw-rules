@@ -72,7 +72,7 @@ release_lockfile() {
 
 get_wan() {
     # just return the first one for now
-    for iface in "$1"; do
+    for iface in $1; do
         echo "$iface"
         return
     done
